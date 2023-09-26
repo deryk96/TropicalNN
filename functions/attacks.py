@@ -14,7 +14,7 @@ def fgsm_attack(model, input_image, target_label, loss_object, epsilson = 8/255)
   return new_image
 
 
-def pgd_attack(model, input_image, target_label, loss_object, epsilon = 8/255, num_steps = 5, step_size):
+def pgd_attack(model, input_image, target_label, loss_object, epsilon = 8/255, num_steps = 5, step_size = 0.01):
     perturbed_image = identity(input_image)  # Create a copy of the input image
     for _ in range(num_steps):
         with GradientTape() as tape:

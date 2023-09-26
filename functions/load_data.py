@@ -1,7 +1,7 @@
 from tensorflow.keras.utils import to_categorical
 import numpy as np
 import pickle
-
+import os
 
 ### RUN THIS CELL FOR CIFAR 10 IMAGE OBJECT DATA AS X AND Y ###
 # --- CIFAR 10 data pictures ---
@@ -32,18 +32,21 @@ def cleanAndSort(x_arr, y_arr, desired_classes = [0,1], subtractTot = 0):
     
     return x_arr, y_arr
 
-def readCIFARData(shuffle = True, desired_classes = [0,1], subtractTot = 7):
+def loadCIFARData(shuffle = True, desired_classes = [0,1], subtractTot = 7):
+    script_dir = os.path.dirname(__file__)
+    data_file_path = os.path.abspath(os.path.join(script_dir, '..', 'data'))
+    
     # - get training data - 
-    batch1 = unpickle('cifar-10-batches-py\\data_batch_1')
-    batch2 = unpickle('cifar-10-batches-py\\data_batch_2')
-    batch3 = unpickle('cifar-10-batches-py\\data_batch_3')
-    batch4 = unpickle('cifar-10-batches-py\\data_batch_4')
-    batch5 = unpickle('cifar-10-batches-py\\data_batch_5')
+    batch1 = unpickle(data_file_path + '\\data_batch_1')
+    batch2 = unpickle(data_file_path + '\\data_batch_2')
+    batch3 = unpickle(data_file_path + '\\data_batch_3')
+    batch4 = unpickle(data_file_path + '\\data_batch_4')
+    batch5 = unpickle(data_file_path + '\\data_batch_5')
     x_train = np.concatenate((batch1[b'data'], batch2[b'data'], batch3[b'data'], batch4[b'data'], batch5[b'data']), axis=0)
     y_train = np.array(batch1[b'labels'] + batch2[b'labels'] + batch3[b'labels'] + batch4[b'labels'] + batch5[b'labels'])
 
     # - get testing data -
-    test = unpickle('cifar-10-batches-py\\test_batch')
+    test = unpickle(data_file_path + '\\test_batch')
     x_test = test[b'data']
     y_test = np.array(test[b'labels'])
 
@@ -71,5 +74,5 @@ def readCIFARData(shuffle = True, desired_classes = [0,1], subtractTot = 7):
         y_train = shuffled_labels[:train_size]
         y_test = shuffled_labels[train_size:]
 
-        print(x_train[0])
+    print(x_train[0])
     return x_train, x_test, y_train, y_test

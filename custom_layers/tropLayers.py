@@ -2,6 +2,7 @@ from tensorflow import reshape
 from tensorflow.math import top_k
 from tensorflow.keras.layers import Layer
 from tensorflow.keras.backend import repeat_elements
+from tensorflow.keras import initializers
 
 
 class TropEmbedTop2(Layer):
@@ -19,9 +20,11 @@ class TropEmbedTop2(Layer):
     
     
 class TropEmbedMaxMin(Layer):
-    def __init__(self, units=2, input_dim=3):
+    def __init__(self, units = 2, input_dim = 3, initializer_w = initializers.random_normal):
         super(TropEmbedMaxMin, self).__init__()
-        self.w = self.add_weight(shape=(units, input_dim), initializer="random_normal", trainable=True)
+        self.w = self.add_weight(shape=(units, input_dim), 
+                                 initializer=initializer_w, 
+                                 trainable=True)
         self.units = units
         self.input_dim = input_dim
 
