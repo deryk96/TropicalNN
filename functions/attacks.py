@@ -2,6 +2,7 @@ from tensorflow import GradientTape, identity, sign, clip_by_value, convert_to_t
 import numpy as np
 import time
 
+
 def fgsm_attack(model, input_image, target_label, loss_object, epsilson = 8/255):
   image = identity(input_image)
   with GradientTape() as tape:
