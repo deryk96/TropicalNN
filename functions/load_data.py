@@ -41,12 +41,14 @@ def filter_arrays(x, y, desired_classes):
         y[y==desired_classes[1]] = 1
     else:
         y = to_categorical(y, len(desired_classes))
+
     return x, y
 
 
 def unpickle(file):
     with open(file, 'rb') as fo:
         dict = pickle.load(fo, encoding='bytes')
+
     return dict
 
 
@@ -134,7 +136,8 @@ def read_images_labels(images_filepath, labels_filepath, desired_classes):
         magic, size, rows, cols = struct.unpack(">IIII", file.read(16))
         if magic != 2051:
             raise ValueError('Magic number mismatch, expected 2051, got {}'.format(magic))
-        image_data = array("B", file.read())        
+        image_data = array("B", file.read())  
+
     images = []
     for i in range(size):
         images.append([0] * rows * cols)
@@ -164,4 +167,5 @@ def load_MNIST_data(desired_classes = [1,4]):
 
     x_train, y_train = read_images_labels(training_images_filepath, training_labels_filepath, desired_classes)
     x_test, y_test = read_images_labels(test_images_filepath, test_labels_filepath, desired_classes)
+
     return x_train, x_test, y_train, y_test 

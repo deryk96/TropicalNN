@@ -33,4 +33,4 @@ class TropEmbedMaxMin(Layer):
         x_for_broadcast = repeat_elements(x_reshaped, self.units, 1)
         valMax, indices = top_k(x_for_broadcast + self.w, 1)
         valMin, indices = top_k(-(x_for_broadcast + self.w), 1)
-        return valMax[:,:,0] - valMin[:,:,0] # symmetric tropical distance
+        return valMax[:,:,0] + valMin[:,:,0]
