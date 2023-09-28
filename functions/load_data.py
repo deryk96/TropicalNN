@@ -159,7 +159,7 @@ def load_MNIST_data(desired_classes = [1,4]):
     MNIST Dataset
     '''
     script_dir = os.path.dirname(__file__)
-    data_file_path = os.path.abspath(os.path.join(script_dir, '..', 'data'))
+    data_file_path = os.path.abspath(os.path.join(script_dir, '..', 'data', 'MNIST'))
     training_images_filepath = data_file_path + '\\train-images.idx3-ubyte'
     training_labels_filepath = data_file_path + '\\train-labels.idx1-ubyte'
     test_images_filepath = data_file_path + '\\t10k-images.idx3-ubyte'
