@@ -60,7 +60,7 @@ def pgd_attack_batch(model, input_images, target_labels, loss_object, epsilon=8/
         with GradientTape() as tape:
             tape.watch(perturbed_images)
             predictions = model(perturbed_images)
-            loss = loss_object(target_labels, predictions)
+            loss = loss_object(convert_to_tensor(target_labels), predictions)
 
         gradients = tape.gradient(loss, perturbed_images)
         signed_gradients = sign(gradients)
