@@ -1,10 +1,11 @@
-from tensorflow import reshape, constant
+from tensorflow import reshape, constant, expand_dims, reduce_max ,reduce_min
 from tensorflow.math import top_k, reduce_sum
 from tensorflow.keras.layers import Layer
 from tensorflow.keras.backend import repeat_elements
 from tensorflow.keras import initializers, regularizers
+from tensorflow.image import extract_patches
 import numpy as np
-
+from numpy.lib.stride_tricks import sliding_window_view
 
 
 class TropReg(regularizers.Regularizer):
@@ -118,3 +119,39 @@ class Triangular(initializers.Initializer):
         np.random.shuffle(weights)  # Shuffle the order
         
         return constant(weights.reshape(shape), dtype=dtype)
+
+
+class TropConv2D(Layer):
+    def __init__(self, filters = 64, 
+                 window_size = [1, 3, 3, 1], 
+                 strides = [1, 1, 1, 1],
+                 rates = [1, 1, 1, 1],
+                 padding = 'VALID',
+                 channels = 3,
+                 initializer_w = initializers.random_normal, 
+                 lam = 0.01):
+        super(TropConv2D, self).__init__()
+        self.w = self.add_weight(shape=(1, 1, 1, window_size[1]*window_size[2]*channels, filters), 
+                                 initializer=initializer_w,
+                                 regularizer=TropReg(lam=lam),
+                                 trainable=True)
+        self.filters = filters
+        self.window_size = window_size
+        self.strides = strides
+        self.rates = rates
+        self.padding = padding
+        self.channels = channels
+
+    def call(self, x):
+        x_patches = extract_patches(images=x, sizes=self.window_size, strides=self.strides, rates=self.rates, padding=self.padding)
+        result_addition = expand_dims(x_patches, axis=-1) + self.w
+        return reduce_max(result_addition, axis=(3)) - reduce_min(result_addition, axis=(3))
+    
+    def get_config(self):
+        config = {
+            'filters': self.filters,
+            'window_size': self.window_size,
+            'initializer_w': initializers.serialize(self.initializer_w)
+        }
+        base_config = super(TropConv2D, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
