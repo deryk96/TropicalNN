@@ -5,7 +5,6 @@ from tensorflow.keras.backend import repeat_elements
 from tensorflow.keras import initializers, regularizers
 from tensorflow.image import extract_patches
 import numpy as np
-from numpy.lib.stride_tricks import sliding_window_view
 
 
 class TropReg(regularizers.Regularizer):
@@ -101,6 +100,30 @@ class BimodalNormalInitializer(initializers.Initializer):
         return constant(weights.reshape(shape), dtype=dtype)
     
 
+class MultimodalNormalInitializer(initializers.Initializer):
+    def __init__(self, stddev=1,modes = [-4.5, 5.5],seed=None):
+        self.seed = seed
+        self.stddev = stddev
+        self.modes = modes
+
+    def __call__(self, shape, dtype=None):
+        if self.seed is not None:
+            np.random.seed(self.seed)
+        
+        num_vals = np.prod(shape)
+        num_modes = len(self.modes)
+        num_vals_section = num_vals // num_modes
+        num_vals_remainder = num_vals % num_modes
+        
+        values = [np.random.normal(loc=m, scale=self.stddev, size=num_vals_section) for m in self.modes]
+        if num_vals_remainder != 0:
+            values.append(np.random.normal(loc=np.random.choice(self.modes), scale=self.stddev, size=num_vals_remainder))
+        weights = np.concatenate(values)
+        np.random.shuffle(weights)
+        
+        return constant(weights.reshape(shape), dtype=dtype)
+    
+
 class Triangular(initializers.Initializer):
     def __init__(self, left=0,mode=0.5, right=1,seed=None):
         self.seed = seed
@@ -135,12 +158,10 @@ class TropConv2D(Layer):
                                  initializer=initializer_w,
                                  regularizer=TropReg(lam=lam),
                                  trainable=True)
-        self.filters = filters
         self.window_size = window_size
         self.strides = strides
         self.rates = rates
         self.padding = padding
-        self.channels = channels
 
     def call(self, x):
         x_patches = extract_patches(images=x, sizes=self.window_size, strides=self.strides, rates=self.rates, padding=self.padding)
