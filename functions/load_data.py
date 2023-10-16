@@ -35,7 +35,8 @@ def filter_arrays(x, y, desired_classes):
     x = x[mask]
     y = y[mask]
     x = np.divide(x, 255)
-    
+    x = np.subtract(x, 0.5)
+
     if len(desired_classes) == 2:
         y[y==desired_classes[0]] = 0
         y[y==desired_classes[1]] = 1
