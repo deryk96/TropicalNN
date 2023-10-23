@@ -1,4 +1,4 @@
-from tensorflow import reshape, expand_dims, reduce_max ,reduce_min
+from tensorflow import reshape, expand_dims, reduce_max ,reduce_min, float32
 from tensorflow.math import top_k, reduce_sum
 from tensorflow.keras.layers import Layer
 from tensorflow.keras.backend import repeat_elements
@@ -34,27 +34,38 @@ class TropEmbedTop2(Layer):
     
     
 class TropEmbedMaxMin(Layer):
-    def __init__(self, units = 2, input_dim = 3, initializer_w = initializers.random_normal, lam = 0.01):
-        super(TropEmbedMaxMin, self).__init__()
-        self.w = self.add_weight(shape=(units, input_dim), 
-                                 initializer=initializer_w,
-                                 regularizer=TropReg(lam=lam),
-                                 trainable=True)
+    def __init__(self, units=2, initializer_w=initializers.random_normal, lam=0.01, **kwargs):
+        super(TropEmbedMaxMin, self).__init__(**kwargs)
         self.units = units
-        self.input_dim = input_dim
+        self.initializer_w = initializer_w
+        self.lam = lam
+
+    def build(self, input_shape):
+        input_dim = input_shape[-1]  # Extract the last dimension from input_shape
+        self.w = self.add_weight(name='tropical_hyperplane', 
+                                 shape=(self.units, input_dim),
+                                 initializer=self.initializer_w,
+                                 regularizer=TropReg(lam=self.lam),
+                                 trainable=True)
+        self.bias = self.add_weight(name='bias',
+                                    shape=(self.units,),
+                                    initializer="zeros", 
+                                    trainable=True)
+        super(TropEmbedMaxMin, self).build(input_shape)
 
     def call(self, x):
-        x_reshaped = reshape(x,[-1, 1, self.input_dim])
+        x_reshaped = reshape(x,[-1, 1, self.w.shape[-1]])
         x_for_broadcast = repeat_elements(x_reshaped, self.units, 1)
-        valMax, indices = top_k(x_for_broadcast + self.w, 1)
-        valMin, indices = top_k(-(x_for_broadcast + self.w), 1)
-        return valMax[:,:,0] + valMin[:,:,0]
+        #valMax, indices = top_k(x_for_broadcast + self.w, 1)
+        #valMin, indices = top_k(-(x_for_broadcast + self.w), 1)
+        result_addition = x_for_broadcast + self.w
+        return reduce_max(result_addition, axis=(1)) - reduce_min(result_addition, axis=(1)) + self.bias
     
     
     def get_config(self):
         config = {
             'units': self.units,
-            'input_dim': self.input_dim,
+            'input_dim': self.w.shape[-1],
             'initializer_w': initializers.serialize(self.initializer_w)
         }
         base_config = super(TropEmbedMaxMin, self).get_config()
@@ -67,23 +78,33 @@ class TropConv2D(Layer):
                  strides = [1, 1, 1, 1],
                  rates = [1, 1, 1, 1],
                  padding = 'VALID',
-                 channels = 3,
                  initializer_w = initializers.random_normal, 
                  lam = 0.01):
         super(TropConv2D, self).__init__()
-        self.w = self.add_weight(shape=(1, 1, 1, window_size[1]*window_size[2]*channels, filters), 
-                                 initializer=initializer_w,
-                                 regularizer=TropReg(lam=lam),
-                                 trainable=True)
+        self.filters = filters
+        self.initializer_w = initializer_w
         self.window_size = window_size
         self.strides = strides
         self.rates = rates
         self.padding = padding
+        self.lam = lam
+
+    def build(self, input_shape):
+        channels = input_shape[-1]  # Extract the last dimension from input_shape
+        self.w = self.add_weight(shape=(1, 1, 1, self.window_size[1] * self.window_size[2] * channels, self.filters), 
+                                 initializer=self.initializer_w,
+                                 regularizer=TropReg(lam=self.lam),
+                                 trainable=True)
+        self.bias = self.add_weight(name='bias',
+                                    shape=(self.filters,),
+                                    initializer="zeros", 
+                                    trainable=True)
+        super(TropConv2D, self).build(input_shape)
 
     def call(self, x):
         x_patches = extract_patches(images=x, sizes=self.window_size, strides=self.strides, rates=self.rates, padding=self.padding)
         result_addition = expand_dims(x_patches, axis=-1) + self.w
-        return reduce_max(result_addition, axis=(3)) - reduce_min(result_addition, axis=(3))
+        return reduce_max(result_addition, axis=(3)) - reduce_min(result_addition, axis=(3)) + self.bias
     
     def get_config(self):
         config = {
