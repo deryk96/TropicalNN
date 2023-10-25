@@ -4,15 +4,15 @@ import time
 
 
 def fgsm_attack(model, input_image, target_label, loss_object, epsilson = 8/255):
-  image = identity(input_image)
-  with GradientTape() as tape:
-    tape.watch(input_image)
-    prediction = model(input_image)
-    loss = loss_object(target_label, prediction)
-  gradient = tape.gradient(loss, input_image)
-  signed_grad = sign(gradient)
-  new_image = image + epsilson*signed_grad
-  return new_image
+    image = identity(input_image)
+    with GradientTape() as tape:
+        tape.watch(input_image)
+        prediction = model(input_image)
+        loss = loss_object(target_label, prediction)
+    gradient = tape.gradient(loss, input_image)
+    signed_grad = sign(gradient)
+    new_image = image + epsilson*signed_grad
+    return new_image
 
 
 def pgd_attack(model, input_image, target_label, loss_object, epsilon = 8/255, num_steps = 5, step_size = 0.01):
@@ -49,7 +49,7 @@ def attackTestSet(model, x_test, y_test, loss_object, modelName, attack='pgd', e
             print(f'{modelName} model {round(i/numberToAttack*100)}% attacked.')
     end_time = time.time()
     elapsed_time = end_time - start_time
-    print(f'{modelName} attack complete. Elapsed time: {elapsed_time:.2f} seconds /// {elapsed_time/60:.2f} minutes.')
+    print(f'{modelName} attack complete. Elapsed time: {elapsed_time:.2f} seconds | {elapsed_time/60:.2f} minutes.')
     return x_test_attacked
 
 
@@ -71,26 +71,23 @@ def pgd_attack_batch(model, input_images, target_labels, loss_object, epsilon=8/
     return perturbed_images
 
 
-def attackTestSetBatch(model, x_test, y_test, loss_object, modelName, attack='pgd', epsilon=8/255, num_steps=5, step_size=0.01, batch_size=32):
+def attackTestSetBatch(model, x_test, y_test, loss_object, modelName, epsilon=8/255, num_steps=5, step_size=0.01, batch_size=32):
     start_time = time.time()
     x_test_attacked = np.copy(x_test)
     numberToAttack = len(x_test_attacked)
-
+    num_print_update = round(numberToAttack / 25)
     for i in range(0, len(x_test_attacked), batch_size):
         batch_x = x_test_attacked[i:i+batch_size]
         batch_y = y_test[i:i+batch_size]
 
         batch_x = pgd_attack_batch(model, batch_x, batch_y, loss_object, epsilon, num_steps, step_size)
-        #elif attack == 'fgsm':
-        #    # Modify this part if you have an 'fgsm_attack_batch' function
-        #    batch_x = fgsm_attack_batch(model, batch_x, batch_y, loss_object, epsilon)
 
         x_test_attacked[i:i+batch_size] = batch_x
 
-        if i % round(numberToAttack / 10) == 0:
+        if i % num_print_update == 0:
             print(f'{modelName} model {round(i / numberToAttack * 100)}% attacked.')
 
     end_time = time.time()
     elapsed_time = end_time - start_time
-    print(f'{modelName} attack complete. Elapsed time: {elapsed_time:.2f} seconds /// {elapsed_time / 60:.2f} minutes.')
+    print(f'{modelName} attack complete. Elapsed time: {elapsed_time:.2f} seconds | {elapsed_time / 60:.2f} minutes.')
     return x_test_attacked

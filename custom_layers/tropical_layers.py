@@ -114,3 +114,47 @@ class TropConv2D(Layer):
         }
         base_config = super(TropConv2D, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
+
+
+class TropConv2DMax(Layer):
+    def __init__(self, filters = 64, 
+                 window_size = [1, 3, 3, 1], 
+                 strides = [1, 1, 1, 1],
+                 rates = [1, 1, 1, 1],
+                 padding = 'VALID',
+                 initializer_w = initializers.random_normal, 
+                 lam = 0.01):
+        super(TropConv2DMax, self).__init__()
+        self.filters = filters
+        self.initializer_w = initializer_w
+        self.window_size = window_size
+        self.strides = strides
+        self.rates = rates
+        self.padding = padding
+        self.lam = lam
+
+    def build(self, input_shape):
+        channels = input_shape[-1]  # Extract the last dimension from input_shape
+        self.w = self.add_weight(shape=(1, 1, 1, self.window_size[1] * self.window_size[2] * channels, self.filters), 
+                                 initializer=self.initializer_w,
+                                 regularizer=TropReg(lam=self.lam),
+                                 trainable=True)
+        self.bias = self.add_weight(name='bias',
+                                    shape=(self.filters,),
+                                    initializer="zeros", 
+                                    trainable=True)
+        super(TropConv2DMax, self).build(input_shape)
+
+    def call(self, x):
+        x_patches = extract_patches(images=x, sizes=self.window_size, strides=self.strides, rates=self.rates, padding=self.padding)
+        result_addition = expand_dims(x_patches, axis=-1) + self.w
+        return reduce_max(result_addition, axis=(3)) + self.bias
+    
+    def get_config(self):
+        config = {
+            'filters': self.filters,
+            'window_size': self.window_size,
+            'initializer_w': initializers.serialize(self.initializer_w)
+        }
+        base_config = super(TropConv2DMax, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))

@@ -69,10 +69,11 @@ def simple_conv_relu_model(x_train,
                        verbose = 1,
                        initializer_relu = initializers.RandomNormal(mean=0.5, stddev=1., seed=0),
                        final_layer_activation = 'softmax', 
-                       training_loss = 'categorical_crossentropy',):
+                       training_loss = 'categorical_crossentropy',
+                       num_first_filters = 32):
     start_time = time.time()
-    model = Sequential([Conv2D(32, (3, 3), activation='relu'),
-                        MaxPooling2D((2, 2)),                            
+    model = Sequential([Conv2D(num_first_filters, (3, 3), activation='relu'),
+                        MaxPooling2D((2, 2), strides=(1, 1)),                            
                         Conv2D(32, (3, 3), activation='relu'),
                         Flatten(),
                         Dense(10, activation=final_layer_activation, kernel_initializer = initializer_relu)])
@@ -91,15 +92,17 @@ def simple_3layer_conv_relu_model(x_train,
                        verbose = 1,
                        initializer_relu = initializers.RandomNormal(mean=0.5, stddev=1., seed=0),
                        final_layer_activation = 'softmax', 
-                       training_loss = 'categorical_crossentropy',):
+                       training_loss = 'categorical_crossentropy',
+                       num_first_filters = 32,
+                       window_first_conv = (3,3)):
     start_time = time.time()
-    model = Sequential([Conv2D(128, (3, 3), activation='relu'),
-                        MaxPooling2D((2, 2)),                            
+    model = Sequential([Conv2D(num_first_filters, window_first_conv, activation='relu'),
+                        MaxPooling2D((2, 2), strides=(1, 1)),                            
                         Conv2D(64, (1, 1), activation='relu'),
-                        MaxPooling2D((2, 2)),                            
+                        MaxPooling2D((2, 2), strides=(1, 1)),                            
                         Conv2D(64, (1, 1), activation='relu'),
                         Flatten(),
-                        Dense(128, activation='relu'),
+                        Dense(64, activation='relu'),
                         Dense(10, activation=final_layer_activation, kernel_initializer = initializer_relu)])
     model.compile(optimizer='adam', loss=training_loss, metrics=['accuracy'])
     model.fit(x_train, y_train, epochs=num_epochs,batch_size=batch_size, verbose=verbose)
@@ -118,10 +121,11 @@ def simple_conv_trop_model(x_train,
                        final_layer_activation = 'softmax', 
                        training_loss = 'categorical_crossentropy',
                        initializer_w = initializers.random_normal,
-                       lam=0.0):
+                       lam=0.0,
+                       num_first_filters = 32):
     start_time = time.time() 
-    model = Sequential([TropConv2D(filters=32, initializer_w=initializer_w, lam=lam),
-                        MaxPooling2D((2, 2)),                            
+    model = Sequential([TropConv2D(filters=num_first_filters, initializer_w=initializer_w, lam=lam),
+                        MaxPooling2D((2, 2), strides=(1, 1)),                            
                         Conv2D(32, (3, 3), activation='relu'),
                         Flatten(),
                         Dense(10, activation=final_layer_activation, kernel_initializer = initializer_relu)])
@@ -130,6 +134,35 @@ def simple_conv_trop_model(x_train,
     end_time = time.time()
     elapsed_time = end_time - start_time
     print(f"Tropical convolution model built. Elapsed time: {elapsed_time:.2f} seconds | {elapsed_time/60:.2f} minutes.")
+    return model
+
+
+def simple_3layer_conv_trop_model(x_train, 
+                       y_train, 
+                       num_epochs = 10,
+                       batch_size = 64, 
+                       verbose = 1,
+                       initializer_relu = initializers.RandomNormal(mean=0.5, stddev=1., seed=0),
+                       final_layer_activation = 'softmax', 
+                       training_loss = 'categorical_crossentropy',
+                       initializer_w = initializers.random_normal,
+                       lam=0.0,
+                       num_first_filters = 32,
+                       window_first_conv = (3,3)):
+    start_time = time.time()
+    model = Sequential([TropConv2D(filters=num_first_filters, window_size= [1,window_first_conv[0],window_first_conv[1],1], initializer_w=initializer_w, lam=lam),
+                        MaxPooling2D((2, 2), strides=(1, 1)),                            
+                        Conv2D(64, (1, 1), activation='relu'),
+                        MaxPooling2D((2, 2), strides=(1, 1)),                            
+                        Conv2D(64, (1, 1), activation='relu'),
+                        Flatten(),
+                        Dense(64, activation='relu'),
+                        Dense(10, activation=final_layer_activation, kernel_initializer = initializer_relu)])
+    model.compile(optimizer='adam', loss=training_loss, metrics=['accuracy'])
+    model.fit(x_train, y_train, epochs=num_epochs,batch_size=batch_size, verbose=verbose)
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    print(f"ReLU convolution model built. Elapsed time: {elapsed_time:.2f} seconds | {elapsed_time/60:.2f} minutes.")
     return model
 
 
