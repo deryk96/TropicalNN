@@ -1,5 +1,5 @@
 from tensorflow import reshape, expand_dims, reduce_max ,reduce_min, float32
-from tensorflow.math import top_k, reduce_sum
+from tensorflow.math import top_k, reduce_sum, exp
 from tensorflow.keras.layers import Layer
 from tensorflow.keras.backend import repeat_elements
 from tensorflow.keras import initializers, regularizers
@@ -14,9 +14,6 @@ class TropReg(regularizers.Regularizer):
         values, indices = top_k(weight_matrix, 1)
         values2, indices2 = top_k(-weight_matrix, 1)
         return self.lam * reduce_sum(values[:, 0] + values2[:, 0])
-
-    def get_config(self):
-        return {'lam': float(self.lam)}
 
 
 class TropEmbedTop2(Layer):
@@ -34,7 +31,7 @@ class TropEmbedTop2(Layer):
     
     
 class TropEmbedMaxMin(Layer):
-    def __init__(self, units=2, initializer_w=initializers.random_normal, lam=0.01, **kwargs):
+    def __init__(self, units=2, initializer_w=initializers.random_normal, lam=0.0, **kwargs):
         super(TropEmbedMaxMin, self).__init__(**kwargs)
         self.units = units
         self.initializer_w = initializer_w
@@ -42,7 +39,7 @@ class TropEmbedMaxMin(Layer):
 
     def build(self, input_shape):
         input_dim = input_shape[-1]  # Extract the last dimension from input_shape
-        self.w = self.add_weight(name='tropical_hyperplane', 
+        self.w = self.add_weight(name='tropical_fw', 
                                  shape=(self.units, input_dim),
                                  initializer=self.initializer_w,
                                  regularizer=TropReg(lam=self.lam),
@@ -56,8 +53,6 @@ class TropEmbedMaxMin(Layer):
     def call(self, x):
         x_reshaped = reshape(x,[-1, 1, self.w.shape[-1]])
         x_for_broadcast = repeat_elements(x_reshaped, self.units, 1)
-        #valMax, indices = top_k(x_for_broadcast + self.w, 1)
-        #valMin, indices = top_k(-(x_for_broadcast + self.w), 1)
         result_addition = x_for_broadcast + self.w
         return reduce_max(result_addition, axis=(1)) - reduce_min(result_addition, axis=(1)) + self.bias
     
@@ -65,11 +60,15 @@ class TropEmbedMaxMin(Layer):
     def get_config(self):
         config = {
             'units': self.units,
-            'input_dim': self.w.shape[-1],
-            'initializer_w': initializers.serialize(self.initializer_w)
+            'initializer_w': initializers.serialize(self.initializer_w),
+            'lam': self.lam
         }
         base_config = super(TropEmbedMaxMin, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
+    
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config)  
     
 
 class TropConv2D(Layer):
@@ -79,8 +78,9 @@ class TropConv2D(Layer):
                  rates = [1, 1, 1, 1],
                  padding = 'VALID',
                  initializer_w = initializers.random_normal, 
-                 lam = 0.01):
-        super(TropConv2D, self).__init__()
+                 lam = 0.0,
+                 **kwargs):
+        super(TropConv2D, self).__init__(**kwargs)
         self.filters = filters
         self.initializer_w = initializer_w
         self.window_size = window_size
@@ -110,10 +110,18 @@ class TropConv2D(Layer):
         config = {
             'filters': self.filters,
             'window_size': self.window_size,
-            'initializer_w': initializers.serialize(self.initializer_w)
+            'strides': self.strides,
+            'rates': self.rates,
+            'padding': self.padding,
+            'initializer_w': initializers.serialize(self.initializer_w),
+            'lam': self.lam
         }
         base_config = super(TropConv2D, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
+    
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config)  
 
 
 class TropConv2DMax(Layer):
@@ -123,7 +131,7 @@ class TropConv2DMax(Layer):
                  rates = [1, 1, 1, 1],
                  padding = 'VALID',
                  initializer_w = initializers.random_normal, 
-                 lam = 0.01):
+                 lam = 0.0):
         super(TropConv2DMax, self).__init__()
         self.filters = filters
         self.initializer_w = initializer_w
@@ -154,7 +162,59 @@ class TropConv2DMax(Layer):
         config = {
             'filters': self.filters,
             'window_size': self.window_size,
-            'initializer_w': initializers.serialize(self.initializer_w)
+            'strides': self.strides,
+            'rates': self.rates,
+            'padding': self.padding,
+            'initializer_w': initializers.serialize(self.initializer_w),
+            'lam': self.lam
         }
         base_config = super(TropConv2DMax, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
+    
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config)  
+    
+
+class TropEmbedMaxMinLogits(Layer):
+    def __init__(self, units=2, initializer_w=initializers.random_normal, lam=0.0, **kwargs):
+        super(TropEmbedMaxMinLogits, self).__init__(**kwargs)
+        self.units = units
+        self.initializer_w = initializer_w
+        self.lam = lam
+
+    def build(self, input_shape):
+        input_dim = input_shape[-1]  # Extract the last dimension from input_shape
+        self.w = self.add_weight(name='tropical_fw', 
+                                 shape=(self.units, input_dim),
+                                 initializer=self.initializer_w,
+                                 regularizer=TropReg(lam=self.lam),
+                                 trainable=True)
+        self.bias = self.add_weight(name='bias',
+                                    shape=(self.units,),
+                                    initializer="zeros", 
+                                    trainable=True)
+        super(TropEmbedMaxMinLogits, self).build(input_shape)
+
+    def call(self, x):
+        x_reshaped = reshape(x,[-1, 1, self.w.shape[-1]])
+        x_for_broadcast = repeat_elements(x_reshaped, self.units, 1)
+        result_addition = x_for_broadcast + self.w
+        trop_distance = reduce_max(result_addition, axis=(2)) - reduce_min(result_addition, axis=(2)) + self.bias
+        negative_exponents = exp(-trop_distance)
+        softmin_values = negative_exponents / reduce_sum(negative_exponents, axis=-1, keepdims=True)
+        return softmin_values 
+    
+    
+    def get_config(self):
+        config = {
+            'units': self.units,
+            'initializer_w': initializers.serialize(self.initializer_w),
+            'lam': self.lam
+        }
+        base_config = super(TropEmbedMaxMinLogits, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
+    
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config) 

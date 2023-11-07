@@ -1,12 +1,12 @@
 # load_data.py
-# Description: This file contains a collection of functions for loading the different datasets in as numpy arrays
+# Description: This file contains a collection of functions for loading the different datasets in as numpy arrays.
 # Author: Kurt Pasque
 # Date: October 25, 2023
 
 '''
-Module: filename.py
+Module: load_data.py
 
-This module provides a collection of functions for loading the different datasets in as numpy arrays
+This module provides a collection of functions for loading the different datasets in as numpy arrays.
 
 Functions:
 - shuffle_data : Shuffles data between training and testing sets. Concatenates data then splits, retaining original train/test split size.
@@ -321,9 +321,19 @@ def load_MNIST_data(desired_classes = [1,4]):
     
     Parameters
     ----------
+    desired_classes : list
+        list of classes user wants from the 10 classes of MNIST dataset
 
     Returns
     -------
+    x_train : numpy array
+        training data
+    x_test : numpy array
+        testing data 
+    y_train : numpy array
+        training labels
+    y_test : numpy array
+        testing labels  
     '''
     # - dynamic file path so users can read in data from their local machines - 
     script_dir = os.path.dirname(__file__) # returns present working directory of this load_data.py file
