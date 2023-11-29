@@ -1,11 +1,12 @@
 
 
-from custom_layers.tropical_layers import TropEmbedMaxMin, TropConv2D, TropConv2DMax, TropEmbedMaxMinLogits
+from custom_layers.tropical_layers import TropEmbedMaxMin, TropConv2D, TropConv2DMax, TropEmbedMaxMinLogits, SoftminLayer, ChangeSignLayer, SoftmaxLayer
 from custom_layers.initializers import BimodalNormalInitializer
 from tensorflow.keras import Sequential, Model
-from tensorflow.keras.layers import Dense, MaxPooling2D, MaxPooling1D, AveragePooling1D, Activation, Flatten, Conv2D, Dropout, Input, BatchNormalization, ReLU, Add, GlobalAveragePooling2D, Reshape
+from tensorflow.keras.layers import Dense, Concatenate, MaxPooling2D, MaxPooling1D, AveragePooling1D, Activation, Flatten, Conv2D, Dropout, Input, BatchNormalization, ReLU, Add, GlobalAveragePooling2D, Reshape, Lambda
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras import initializers
+from tensorflow import reduce_sum
 import time
 
 def trop_conv3layer_logits(x_train, 
@@ -16,7 +17,8 @@ def trop_conv3layer_logits(x_train,
                        training_loss = 'categorical_crossentropy',
                        num_first_filters = 32,
                        window_first_conv = (3,3),
-                       initializer_w = initializers.RandomNormal(0, 0.05)):
+                       initializer_w = initializers.RandomNormal(0, 0.05),
+                       lam=0):
     start_time = time.time()
     model = Sequential([Conv2D(num_first_filters, window_first_conv, activation='relu'),
                         MaxPooling2D((2, 2)),                            
@@ -24,8 +26,8 @@ def trop_conv3layer_logits(x_train,
                         MaxPooling2D((2, 2)),                            
                         Conv2D(64, (3, 3), activation='relu'),
                         Flatten(),
-                        Dense(64, activation='relu'),
-                        TropEmbedMaxMinLogits(10, initializer_w=initializer_w)])
+                        Dense(3, activation='relu'),
+                        TropEmbedMaxMinLogits(y_train.shape[1], initializer_w=initializer_w, lam=lam)])
     model.compile(optimizer='adam', loss=training_loss, metrics=['accuracy'])
     model.fit(x_train, y_train, epochs=num_epochs,batch_size=batch_size, verbose=verbose)
     end_time = time.time()
@@ -40,23 +42,31 @@ def trop_conv3layer_manyMaxLogits(x_train,
                        batch_size = 64, 
                        verbose = 1,
                        p = 3,
+                       lam=1.0,
                        training_loss = 'categorical_crossentropy',
                        num_first_filters = 32,
                        window_first_conv = (3,3),
                        initializer_w = initializers.RandomNormal(0, 0.05)):
     start_time = time.time()
-    model = Sequential([Conv2D(num_first_filters, window_first_conv, activation='relu'),
-                        MaxPooling2D((2, 2)),                            
-                        Conv2D(64, (3, 3), activation='relu'),
-                        MaxPooling2D((2, 2)),                            
-                        Conv2D(64, (3, 3), activation='relu'),
-                        Flatten(),
-                        Dense(64, activation='relu'),
-                        TropEmbedMaxMinLogits(p*10, initializer_w=initializer_w),
-                        Reshape((p*10,1)),
+    num_classes = y_train.shape[1]
+    inputs = Input(shape = x_train.shape[1:])
+    first_half = Conv2D(num_first_filters, window_first_conv, activation='relu')(inputs)
+    first_half = MaxPooling2D((2, 2))(first_half)                          
+    first_half = Conv2D(64, (3, 3), activation='relu')(first_half) 
+    first_half = MaxPooling2D((2, 2))(first_half)                             
+    first_half = Conv2D(64, (3, 3), activation='relu')(first_half) 
+    first_half = Flatten()(first_half) 
+    dense_layer = Dense(3, activation='relu', name='dense')(first_half) 
+    class_work = [TropEmbedMaxMin(p, initializer_w=initializer_w, lam=lam)(dense_layer) for _ in range(num_classes)]
+    merge_layer = Concatenate(axis=-1, name='merge_layer')(class_work) 
+    back_half = Sequential([Reshape((p*num_classes,1)),
+                        ChangeSignLayer(),
                         MaxPooling1D(pool_size=p),
-                        Flatten()])
+                        Flatten(),
+                        SoftmaxLayer()])(merge_layer)
                         #Activation('softmax')])
+    model = Model(inputs=inputs, outputs=back_half)
+    print(model.summary())
     model.compile(optimizer='adam', loss=training_loss, metrics=['accuracy'])
     model.fit(x_train, y_train, epochs=num_epochs,batch_size=batch_size, verbose=verbose)
     end_time = time.time()
@@ -77,21 +87,27 @@ def trop_conv3layer_manyAverageLogits(x_train,
                        initializer_w = initializers.RandomNormal(0, 0.1),
                        lam=0):
     start_time = time.time()
-    model = Sequential([Conv2D(num_first_filters, window_first_conv, activation='relu'),
-                        MaxPooling2D((2, 2)),                            
-                        Conv2D(64, (3, 3), activation='relu'),
-                        MaxPooling2D((2, 2)),                            
-                        Conv2D(64, (3, 3), activation='relu'),
-                        Flatten(),
-                        Dense(64, activation='relu'),
-                        TropEmbedMaxMinLogits(p*10, initializer_w=initializer_w, lam=lam),
-                        Reshape((p*10,1)),
+    num_classes = y_train.shape[1]
+    inputs = Input(shape = x_train.shape[1:])
+    first_half = Conv2D(num_first_filters, window_first_conv, activation='relu')(inputs)
+    first_half = MaxPooling2D((2, 2))(first_half)                          
+    first_half = Conv2D(64, (3, 3), activation='relu')(first_half) 
+    first_half = MaxPooling2D((2, 2))(first_half)                             
+    first_half = Conv2D(64, (3, 3), activation='relu')(first_half) 
+    first_half = Flatten()(first_half) 
+    dense_layer = Dense(3, activation='relu', name='dense')(first_half) 
+    class_work = [TropEmbedMaxMin(p, initializer_w=initializer_w, lam=lam)(dense_layer) for _ in range(num_classes)]
+    merge_layer = Concatenate(axis=-1, name = 'merge_layer')(class_work)              
+    back_half = Sequential([Reshape((p*num_classes,1)),
                         AveragePooling1D(pool_size=p),
-                        Flatten()])
-                        #Activation('softmax')])
+                        Flatten(),
+                        SoftminLayer()])(merge_layer)
+    model = Model(inputs=inputs, outputs=back_half)
+    print(model.summary())
     model.compile(optimizer='adam', loss=training_loss, metrics=['accuracy'])
     model.fit(x_train, y_train, epochs=num_epochs,batch_size=batch_size, verbose=verbose)
     end_time = time.time()
+
     elapsed_time = end_time - start_time
     print(f"trop_conv3layer_manyAverageLogits model built. Elapsed time: {elapsed_time:.2f} seconds | {elapsed_time/60:.2f} minutes.")
     return model
