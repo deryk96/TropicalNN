@@ -17,7 +17,7 @@ Functions:
 '''
 
 # - imports - 
-from tensorflow import GradientTape, identity, sign, clip_by_value, convert_to_tensor, float32
+from tensorflow import GradientTape, random, math, identity, sign, clip_by_value, convert_to_tensor, float32
 import numpy as np
 import time
 
@@ -160,7 +160,15 @@ def attackTestSet(model, x_test, y_test, loss_object, modelName, attack='pgd', e
     return x_test_attacked
 
 
-def pgd_attack_batch(model, input_images, target_labels, loss_object, epsilon=8/255, num_steps=5, step_size=0.01, already_attacked_input_images = None):
+def pgd_attack_batch(model, 
+                     input_images, 
+                     target_labels, 
+                     loss_object, 
+                     epsilon=8/255, 
+                     num_steps=5, 
+                     step_size=0.01, 
+                     already_attacked_input_images = None,
+                     random_start = True):
     '''
     This function implements the Projected Gradient Descent Method in batches to improve computation time. The method perturbates input images based 
     on a given model and true data label. The method takes multiple (num_steps) of FGSM, however it differes in that each step has a specified step size 
@@ -193,6 +201,12 @@ def pgd_attack_batch(model, input_images, target_labels, loss_object, epsilon=8/
         perturbed_images = identity(already_attacked_input_images)  # Create a copy of the input images
     else:
         perturbed_images = identity(input_images)  # Create a copy of the input images
+
+    if random_start:
+        # Generating random perturbation
+        random_perturbation = random.uniform(shape=input_images.shape, minval=-epsilon, maxval=epsilon)
+        perturbed_images = perturbed_images + random_perturbation  # Add random perturbation to input images
+    
     for _ in range(num_steps): # loop num_steps times
         with GradientTape() as tape: # Record operations for automatic differentiation.
             tape.watch(perturbed_images) # Ensures that tensor is being traced by this tape.
@@ -206,31 +220,165 @@ def pgd_attack_batch(model, input_images, target_labels, loss_object, epsilon=8/
     return perturbed_images
 
 
-def attackTestSetBatch(model, x_test, y_test, loss_object, modelName, epsilon=8/255, num_steps=5, step_size=0.01, batch_size=32, already_attacked_input_images = None):
-    start_time = time.time()
+def tramer_pgd_attack_batch(model, 
+                     input_images, 
+                     target_labels, 
+                     loss_object, 
+                     epsilon=8/255, 
+                     num_steps=5, 
+                     step_size=0.01, 
+                     already_attacked_input_images = None,
+                     random_start = True):
+    '''
+    This function implements the Projected Gradient Descent Method in batches to improve computation time. The method perturbates input images based 
+    on a given model and true data label. The method takes multiple (num_steps) of FGSM, however it differes in that each step has a specified step size 
+    (step_size). After each step, the perturbation is projected back inside the epsilon ball and/or projected back inside the given range of the pixel 
+    data (in our case [-0.5, 0.5]).
+
+    Parameters
+    ----------
+    model : tensorflow model object
+        trained tensorflow model
+    input_images : numpy array
+        set of numpy arrays of input data to attack
+    target_label : numpy array
+        set of numpy arrays of the target label for the given input_images
+    loss_object : tensorflow loss object
+        loss object from tensorflow such as binary or categorical cross entropy 
+    epsilson : float
+        our "adversarial budget", i.e. how far we can deviate from the original data
+    num_steps : int
+        the number of gradient steps we take to maximize the image's loss relative to the input model
+    step_size : float
+        the step size taken at each step
+
+    Returns
+    -------
+    perturbed_images : tensorflow tensor object
+        A perturbated version of the input image
+    '''
     if already_attacked_input_images is not None:
-        x_test_attacked = np.copy(already_attacked_input_images)
+        perturbed_images = identity(already_attacked_input_images)  # Create a copy of the input images
     else:
-        x_test_attacked = np.copy(x_test)
-    numberToAttack = len(x_test_attacked)
-    num_print_update = round(numberToAttack / 25)
-    for i in range(0, len(x_test_attacked), batch_size):
+        perturbed_images = identity(input_images)  # Create a copy of the input images
+
+    if random_start:
+        # Generating random perturbation
+        random_perturbation = random.uniform(shape=input_images.shape, minval=-epsilon, maxval=epsilon)
+        perturbed_images = perturbed_images + random_perturbation  # Add random perturbation to input images
+    
+    for _ in range(num_steps): # loop num_steps times
+        with GradientTape() as tape: # Record operations for automatic differentiation.
+            tape.watch(perturbed_images) # Ensures that tensor is being traced by this tape.
+            predictions = model(perturbed_images) # predicts classes of input data using model
+            loss = loss_object(convert_to_tensor(target_labels), predictions) # calculates losses based on loss object, true label, and predicted label
+        gradients = tape.gradient(loss, perturbed_images) # Computes the gradient using operations recorded in context of this tape.
+        abs_grad = math.abs(gradients) #from Tramer
+        signed_gradients = sign(gradients) # take sign of gradients: will be either a -1, 0, or 1
+        max_abs_grad = np.percentile(abs_grad, 99, axis=(1, 2, 3), keepdims=True)  #from Tramer
+        tied_for_max = (abs_grad >= max_abs_grad).astype(np.float32) #from Tramer
+        num_ties = np.sum(tied_for_max, (1, 2, 3), keepdims=True) #from Tramer
+        optimal_perturbation = signed_gradients * tied_for_max / num_ties #from Tramer
+        
+        l1 = np.sum(np.abs(new_delta), axis=(1, 2, 3))
+        to_project = l1 > epsilon
+        if np.any(to_project):
+            n = np.sum(to_project)
+            d = new_delta[to_project].reshape(n, -1)  # n * N (N=h*w*ch)
+            abs_d = np.abs(d)  # n * N
+            mu = -np.sort(-abs_d, axis=-1)  # n * N
+            cumsums = mu.cumsum(axis=-1)  # n * N
+            eps_d = eps_w[to_project]
+            js = 1.0 / np.arange(1, h * w * ch + 1)
+            temp = mu - js * (cumsums - np.expand_dims(eps_d, -1))
+            rho = np.argmin(temp > 0, axis=-1)
+            theta = 1.0 / (1 + rho) * (cumsums[range(n), rho] - eps_d)
+            sgn = np.sign(d)
+            d = sgn * np.maximum(abs_d - np.expand_dims(theta, -1), 0)
+            new_delta[to_project] = d.reshape(-1, h, w, ch)
+
+        new_delta = np.clip(new_delta, x_min - (x_adv - old_delta), x_max - (x_adv - old_delta))
+
+        perturbed_images = perturbed_images + step_size * optimal_perturbation # add a step_size step using signed gradient and add to images
+        perturbed_images = clip_by_value(perturbed_images, input_images - epsilon, input_images + epsilon) # Clip/project pixel values so they are no more than epsilon different from original value
+        perturbed_images = clip_by_value(perturbed_images, -0.5, 0.5) # Clip/project pixel values are in [-0.5, 0.5] range
+    return perturbed_images
+
+
+def attackTestSetBatch(model, x_test, y_test, loss_object, modelName, epsilon=8/255, num_steps=5, step_size=0.01, batch_size=32, already_attacked_input_images=None):
+    '''
+    Attacks a set of data in batches to maximize the loss relative to a given model using the PGD attack method.
+
+    Parameters
+    ----------
+    model : tensorflow model object
+        Trained TensorFlow model.
+    x_test : numpy array
+        Set of numpy arrays of input data to attack.
+    y_test : numpy array
+        Set of numpy arrays of the target label for the given input images.
+    loss_object : tensorflow loss object
+        Loss object from TensorFlow such as binary or categorical cross-entropy.
+    modelName : str
+        Used for clear printouts as the attack progresses.
+    epsilon : float, optional
+        Our "adversarial budget", i.e. how far we can deviate from the original data.
+    num_steps : int, optional
+        The number of gradient steps taken to maximize the image's loss relative to the input model.
+    step_size : float, optional
+        The step size taken at each step.
+    batch_size : int, optional
+        Size of each batch for the attack.
+    already_attacked_input_images : numpy array, optional
+        Input images that have already been attacked.
+
+    Returns
+    -------
+    x_test_attacked : numpy array
+        A perturbated version of the input images.
+    '''
+    start_time = time.time()  # Record the starting time of the attack process.
+
+    if already_attacked_input_images is not None:  # Check if there are previously attacked images available.
+        x_test_attacked = np.copy(already_attacked_input_images)  # Create a copy of previously attacked images.
+        random_start = False
+    else:
+        x_test_attacked = np.copy(x_test)  # Otherwise, create a copy of the original input images.
+        random_start = True
+
+    numberToAttack = len(x_test_attacked)  # Get the total number of images to attack.
+    num_print_update = round(numberToAttack / 25)  # Calculate the number of images for each progress update.
+
+    for i in range(0, len(x_test_attacked), batch_size):  # Loop through the images in batches.
         if already_attacked_input_images is not None:
-            batch_x_already_attacked = x_test_attacked[i:i+batch_size]
-            batch_x = x_test[i:i+batch_size]
+            # Extract the corresponding batches of already attacked and original input images.
+            batch_x_already_attacked = x_test_attacked[i:i + batch_size]
+            batch_x = x_test[i:i + batch_size]
         else:
             batch_x_already_attacked = None
-            batch_x = x_test_attacked[i:i+batch_size]
-        batch_y = y_test[i:i+batch_size]
+            batch_x = x_test_attacked[i:i + batch_size]
 
-        batch_x_attack = pgd_attack_batch(model, batch_x, batch_y, loss_object, epsilon, num_steps, step_size, already_attacked_input_images = batch_x_already_attacked)
+        batch_y = y_test[i:i + batch_size]  # Extract the corresponding batch of target labels.
+        # Perform PGD attack on the current batch of images.
+        batch_x_attack = pgd_attack_batch(
+            model,
+            batch_x,
+            batch_y,
+            loss_object,
+            epsilon,
+            num_steps,
+            step_size,
+            already_attacked_input_images=batch_x_already_attacked,
+            random_start = random_start
+        )
 
-        x_test_attacked[i:i+batch_size] = batch_x_attack
+        x_test_attacked[i:i + batch_size] = batch_x_attack  # Update the attacked images with the perturbed batch.
 
-        if i % num_print_update == 0:
+        if i % num_print_update == 0:  # Print progress updates based on the number of images processed.
             print(f'{modelName} model {round(i / numberToAttack * 100)}% attacked.')
 
-    end_time = time.time()
-    elapsed_time = end_time - start_time
+    end_time = time.time()  # Record the ending time of the attack process.
+    elapsed_time = end_time - start_time  # Calculate the elapsed time for the attack.
     print(f'{modelName} attack complete. Elapsed time: {elapsed_time:.2f} seconds | {elapsed_time / 60:.2f} minutes.')
-    return x_test_attacked
+
+    return x_test_attacked  # Return the perturbed images.

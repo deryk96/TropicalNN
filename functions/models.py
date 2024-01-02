@@ -19,13 +19,241 @@ Functions:
 
 from custom_layers.tropical_layers import TropEmbedMaxMin, TropConv2D, TropConv2DMax, TropEmbedMaxMinLogits, SoftminLayer, ChangeSignLayer, SoftmaxLayer
 from custom_layers.initializers import BimodalNormalInitializer
-from tensorflow.keras import Sequential, Model
-from tensorflow.keras.layers import Dense, Concatenate, MaxPooling2D, MaxPooling1D, AveragePooling1D, Activation, Flatten, Conv2D, Dropout, Input, BatchNormalization, ReLU, Add, GlobalAveragePooling2D, Reshape, Lambda
+from tensorflow.keras import Sequential, Model, initializers, models
+from tensorflow.keras.layers import Dense, Concatenate, MaxPooling2D, MaxPooling1D, AveragePooling1D, Activation, Flatten, Conv2D, Dropout, Input, BatchNormalization, ReLU, Add, AveragePooling2D, Reshape, Lambda
 from tensorflow.keras.optimizers import Adam
-from tensorflow.keras import initializers
-from tensorflow import reduce_sum, reduce_max, subtract
+from tensorflow import reduce_sum, reduce_max, subtract, reshape, convert_to_tensor
 import time
 
+
+from tensorflow.keras.layers import GlobalAveragePooling2D, Dense
+from tensorflow.keras import Model
+from tensorflow.keras.applications import ResNet50
+
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Layer
+from tensorflow.keras.models import Sequential, Model
+import time
+
+class Maxout(Layer):
+    def __init__(self, num_units, axis=-1, **kwargs):
+        super(Maxout, self).__init__(**kwargs)
+        self.num_units = num_units
+        self.axis = axis
+
+    def call(self, inputs):
+        inputs = convert_to_tensor(inputs)
+        shape = inputs.get_shape().as_list()
+        # -1 for the last dimension if axis is -1
+        num_channels = shape[self.axis] if self.axis != -1 else shape[-1]
+        if num_channels % self.num_units:
+            raise ValueError('number of features({}) is not a multiple of num_units({})'.format(num_channels, self.num_units))
+        shape[self.axis] = self.num_units
+        shape += [num_channels // self.num_units]
+        outputs = reduce_max(reshape(inputs, shape), -1)
+        return outputs
+
+class CH_MaxoutConv3Layer(Model):
+    def __init__(self, num_classes, num_maxout_neurons = 10):
+        super(CH_MaxoutConv3Layer, self).__init__()
+        self.num_classes = num_classes
+        self.num_maxout_neurons = num_maxout_neurons
+        self._build_model()
+
+    def _build_model(self):
+        self.conv_layers = Sequential([
+            Conv2D(64, (3,3), padding='same'),
+            MaxPooling2D((2, 2)),
+            Conv2D(64, (3, 3), padding='same'),
+            MaxPooling2D((2, 2)),
+            Conv2D(64, (3, 3), padding='same'),
+            Flatten()
+        ])
+
+        self.dense_layer = Dense(64)
+        self.dense_1 = Dense(self.num_maxout_neurons * self.num_classes)
+        self.dense_2 = Dense(self.num_maxout_neurons * self.num_classes)
+        self.maxout_1 = Maxout(num_units=self.num_classes, axis=-1)
+        self.maxout_2 = Maxout(num_units=self.num_classes, axis=-1)
+
+    def call(self, inputs, training=False):
+        x = self.conv_layers(inputs)
+        x = self.dense_layer(x)
+        
+        x_1 = self.dense_1(x)
+        x_1 = self.maxout_1(x_1)
+
+        x_2 = self.dense_2(x)
+        x_2 = self.maxout_2(x_2)
+
+        logits = x_1 - x_2
+        return logits
+
+    def compile_model(self, loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy']):
+        self.compile(optimizer=optimizer, loss=loss, metrics=metrics)
+
+    def fit_model(self, x_train, y_train, num_epochs=10, batch_size=64, verbose=1):
+        start_time = time.time()
+        self.fit(x_train, y_train, epochs=num_epochs, batch_size=batch_size, verbose=verbose)
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        print(f"Model built. Elapsed time: {elapsed_time:.2f} seconds | {elapsed_time / 60:.2f} minutes.")
+        return self
+
+class CH_MaxOut_ResNet50(Model):
+    def __init__(self, num_classes, num_maxout_neurons=10):
+        super(CH_MaxOut_ResNet50, self).__init__()
+        self.num_classes = num_classes
+        self.num_maxout_neurons = num_maxout_neurons
+
+        # Initialize ResNet50 base model
+        self.resnet50_base = ResNet50(weights=None, include_top=False, input_shape=(32, 32, 3))
+
+        # Define additional layers
+        self.global_avg_pooling = GlobalAveragePooling2D()
+        self.dense_layer = Dense(64, activation='relu')
+        self.dense_1 = Dense(self.num_maxout_neurons * self.num_classes)
+        self.dense_2 = Dense(self.num_maxout_neurons * self.num_classes)
+        self.maxout_1 = Maxout(num_units=self.num_classes, axis=-1)
+        self.maxout_2 = Maxout(num_units=self.num_classes, axis=-1)
+
+    def call(self, inputs, training=False):
+        x = self.resnet50_base(inputs, training=training)
+        x = self.global_avg_pooling(x)
+        x = self.dense_layer(x)
+        x_1 = self.dense_1(x)
+        x_1 = self.maxout_1(x_1)
+
+        x_2 = self.dense_2(x)
+        x_2 = self.maxout_2(x_2)
+
+        logits = x_1 - x_2
+        return logits
+    
+class CH_ReLU_ResNet50(Model):
+    def __init__(self, num_classes):
+        super(CH_ReLU_ResNet50, self).__init__()
+        self.num_classes = num_classes
+
+        # Initialize ResNet50 base model
+        self.resnet50_base = ResNet50(weights=None, include_top=False, input_shape=(32, 32, 3))
+
+        # Define additional layers
+        self.global_avg_pooling = GlobalAveragePooling2D()
+        self.dense_layer = Dense(64, activation='relu')
+        self.final_layer = Dense(num_classes)
+
+    def call(self, inputs, training=False):
+        x = self.resnet50_base(inputs, training=training)
+        x = self.global_avg_pooling(x)
+        x = self.dense_layer(x)
+        return self.final_layer(x)
+
+
+class CH_Trop_ResNet50(Model):
+    def __init__(self, num_classes, initializer_w=initializers.RandomNormal(0.5, 1), lam=1):
+        super(CH_Trop_ResNet50, self).__init__()
+        self.num_classes = num_classes
+
+        self.initializer_w = initializer_w
+        self.lam = lam
+        # Initialize ResNet50 base model
+        self.resnet50_base = ResNet50(weights=None, include_top=False, input_shape=(32, 32, 3))
+
+        # Define additional layers
+        self.global_avg_pooling = GlobalAveragePooling2D()
+        self.dense_layer = Dense(64, activation='relu')
+        self.trop_act = TropEmbedMaxMin(self.num_classes, initializer_w=self.initializer_w, lam=self.lam)
+        self.change_sign = ChangeSignLayer()
+        #self.final_layer = Activation('softmax')
+
+    def call(self, inputs, training=False):
+        x = self.resnet50_base(inputs, training=training)
+        x = self.global_avg_pooling(x)
+        x = self.dense_layer(x)
+        x = self.trop_act(x)
+        logits = self.change_sign(x)
+        #logits = self.final_layer(x)
+        return logits
+
+
+class CH_ReluConv3Layer(Model):
+    def __init__(self, num_classes, initializer_relu=initializers.RandomNormal(mean=0.5, stddev=1., seed=0)):
+        super(CH_ReluConv3Layer, self).__init__()
+        self.num_classes = num_classes
+        self.initializer_relu = initializer_relu
+        self._build_model()
+
+    def _build_model(self):
+        self.conv_layers = Sequential([
+            Conv2D(64, (3,3), activation='relu'),
+            MaxPooling2D((2, 2)),
+            Conv2D(64, (3, 3), activation='relu'),
+            MaxPooling2D((2, 2)),
+            Conv2D(64, (3, 3), activation='relu'),
+            Flatten()
+        ])
+
+        self.dense_layer = Dense(64, activation='relu')
+        self.final_layer = Dense(self.num_classes, kernel_initializer=self.initializer_relu)
+
+    def call(self, inputs, training=False):
+        x = self.conv_layers(inputs)
+        x = self.dense_layer(x)
+        logits = self.final_layer(x)
+        return logits
+
+    def compile_model(self, loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy']):
+        self.compile(optimizer=optimizer, loss=loss, metrics=metrics)
+
+    def fit_model(self, x_train, y_train, num_epochs=10, batch_size=64, verbose=1):
+        start_time = time.time()
+        self.fit(x_train, y_train, epochs=num_epochs, batch_size=batch_size, verbose=verbose)
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        print(f"Model built. Elapsed time: {elapsed_time:.2f} seconds | {elapsed_time / 60:.2f} minutes.")
+        return self
+
+
+class CH_TropConv3LayerLogits(Model):
+    def __init__(self, num_classes, initializer_w=initializers.RandomNormal(0.5, 1), lam=1):
+        super(CH_TropConv3LayerLogits, self).__init__()
+        self.num_classes = num_classes
+        self.initializer_w = initializer_w
+        self.lam = lam
+
+        self._build_model()
+
+    def _build_model(self):
+        self.conv_layers = Sequential([
+            Conv2D(64, (3,3), activation='relu'),
+            MaxPooling2D((2, 2)),
+            Conv2D(64, (3, 3), activation='relu'),
+            MaxPooling2D((2, 2)),
+            Conv2D(64, (3, 3), activation='relu'),
+            Flatten()
+        ])
+
+        self.dense_layer = Dense(64, activation='relu', name='dense')
+        self.final_layer = TropEmbedMaxMinLogits(self.num_classes, initializer_w=self.initializer_w, lam=self.lam)
+
+    def call(self, inputs, training=False):
+        x = self.conv_layers(inputs)
+        x = self.dense_layer(x)
+        logits = self.final_layer(x)
+        return logits
+
+    def compile_model(self, loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy']):
+        self.compile(optimizer=optimizer, loss=loss, metrics=metrics)
+
+    def fit_model(self, x_train, y_train, num_epochs=10, batch_size=64, verbose=1):
+        start_time = time.time()
+        self.fit(x_train, y_train, epochs=num_epochs, batch_size=batch_size, verbose=verbose)
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        print(f"Model built. Elapsed time: {elapsed_time:.2f} seconds | {elapsed_time / 60:.2f} minutes.")
+
+        return self
+    
 
 def functional_conv(num_first_filters, window_first_conv, inputs):
     first_half = Sequential([Conv2D(num_first_filters, window_first_conv, activation='relu'),
