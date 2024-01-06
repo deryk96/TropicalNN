@@ -56,10 +56,10 @@ def main(_):
     # Slicing the test dataset by batches
     test_data_subset = data.test.skip(start_batch).take(batches_per_chunk)
 
-    models = ['saved_models/CH_TropConv3LayerLogits_0.05_1_False',
+    model_paths = ['saved_models/CH_TropConv3LayerLogits_0.05_1_False',
               'saved_models/CH_ReluConv3Layer_0.05_1_False']
 
-    for model_path in models:
+    for model_path in model_paths:
         model = tf.keras.models.load_model(model_path)
 
         test_acc_clean = tf.metrics.SparseCategoricalAccuracy()
