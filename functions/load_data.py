@@ -26,8 +26,80 @@ import pickle
 import os
 import struct
 from tensorflow.keras.utils import to_categorical
+from tensorflow import cast, float32
+import tensorflow_datasets as tfds
+from easydict import EasyDict
 from scipy.io import loadmat
 from array import array
+
+
+'''
+def ld_cifar10():
+    """Load training and test data."""
+
+    def convert_types(image, label):
+        image = tf.cast(image, tf.float32)
+        image /= 127.5
+        image -= 1.0
+        return image, label
+
+    dataset, info = tfds.load("cifar10", with_info=True, as_supervised=True)
+
+    def augment_mirror(x):
+        return tf.image.random_flip_left_right(x)
+
+    def augment_shift(x, w=4):
+        y = tf.pad(x, [[w] * 2, [w] * 2, [0] * 2], mode="REFLECT")
+        return tf.image.random_crop(y, tf.shape(x))
+
+    cifar10_train, cifar10_test = dataset["train"], dataset["test"]
+    # Augmentation helps a lot in CIFAR10
+    cifar10_train = cifar10_train.map(
+        lambda x, y: (augment_mirror(augment_shift(x)), y)
+    )
+    cifar10_train = cifar10_train.map(convert_types).shuffle(10000).batch(128)
+    cifar10_test = cifar10_test.map(convert_types).batch(128)
+
+    return EasyDict(train=cifar10_train, test=cifar10_test)
+'''
+
+def convert_types(image, label):
+    """Convert image types and normalize to [-1, 1]."""
+    image = cast(image, float32)
+    image /= 127.5
+    image -= 1.0
+    return image, label
+
+def ld_mnist():
+    """Load MNIST training and test data."""
+    dataset, info = tfds.load("mnist", with_info=True, as_supervised=True)
+
+    mnist_train, mnist_test = dataset["train"], dataset["test"]
+    mnist_train = mnist_train.map(convert_types).shuffle(10000).batch(128)
+    mnist_test = mnist_test.map(convert_types).batch(128)
+
+    return EasyDict(train=mnist_train, test=mnist_test), info
+
+def ld_svhn():
+    """Load SVHN training and test data."""
+    dataset, info = tfds.load("svhn_cropped", with_info=True, as_supervised=True)
+
+    svhn_train, svhn_test = dataset["train"], dataset["test"]
+    svhn_train = svhn_train.map(convert_types).shuffle(10000).batch(128)
+    svhn_test = svhn_test.map(convert_types).batch(128)
+
+    return EasyDict(train=svhn_train, test=svhn_test), info
+
+def ld_cifar10():
+    """Load CIFAR-10 training and test data."""
+    dataset, info = tfds.load("cifar10", with_info=True, as_supervised=True)
+
+    cifar10_train, cifar10_test = dataset["train"], dataset["test"]
+    cifar10_train = cifar10_train.map(convert_types).shuffle(10000).batch(128)
+    cifar10_test = cifar10_test.map(convert_types).batch(128)
+
+    return EasyDict(train=cifar10_train, test=cifar10_test), info
+
 
 def shuffle_data(x_train, x_test, y_train, y_test):
     '''

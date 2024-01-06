@@ -1,4 +1,5 @@
 import math
+import argparse
 import time
 import numpy as np
 import tensorflow as tf
@@ -10,96 +11,63 @@ from tensorflow.keras.layers import AveragePooling2D, Conv2D, MaxPooling2D, Dens
 
 from custom_layers.tropical_layers import TropEmbedMaxMinLogits, ChangeSignLayer, TropEmbedMaxMin
 from functions.models import CH_ReluConv3Layer, CH_ReLU_ResNet50, CH_Trop_ResNet50, CH_TropConv3LayerLogits, CH_MaxoutConv3Layer, CH_MaxOut_ResNet50
-from functions.load_data import load_CIFAR_data
+from functions.load_data import ld_mnist, ld_svhn, ld_cifar10
 
 from cleverhans.tf2.attacks.projected_gradient_descent import projected_gradient_descent
 from cleverhans.tf2.attacks.fast_gradient_method import fast_gradient_method
 #from cleverhans.tf2.attacks.carlini_wagner_l2 import carlini_wagner_l2
-from edited_carlini_wagner_l2 import carlini_wagner_l2
+from edited_cleverhans.edited_carlini_wagner_l2 import carlini_wagner_l2
 #from cleverhans.tf2.attacks.spsa import spsa
-from edited_spsa import spsa
+from edited_cleverhans.edited_spsa import spsa
 
 FLAGS = flags.FLAGS
 
-def ld_cifar10():
-    """Load training and test data."""
-
-    def convert_types(image, label):
-        image = tf.cast(image, tf.float32)
-        image /= 127.5
-        image -= 1.0
-        return image, label
-
-    dataset, info = tfds.load("cifar10", with_info=True, as_supervised=True)
-
-    def augment_mirror(x):
-        return tf.image.random_flip_left_right(x)
-
-    def augment_shift(x, w=4):
-        y = tf.pad(x, [[w] * 2, [w] * 2, [0] * 2], mode="REFLECT")
-        return tf.image.random_crop(y, tf.shape(x))
-
-    cifar10_train, cifar10_test = dataset["train"], dataset["test"]
-    # Augmentation helps a lot in CIFAR10
-    cifar10_train = cifar10_train.map(
-        lambda x, y: (augment_mirror(augment_shift(x)), y)
-    )
-    cifar10_train = cifar10_train.map(convert_types).shuffle(10000).batch(128)
-    cifar10_test = cifar10_test.map(convert_types).batch(128)
-
-    return EasyDict(train=cifar10_train, test=cifar10_test)
-
 
 def main(_):
-    # Load training and test data
-    data = ld_cifar10()
-    #model = CH_TropConv3LayerLogits(num_classes=10)
-    #model = CH_ReLU_ResNet50(num_classes=10)
-    #model = CH_Trop_ResNet50(num_classes=10)
-    #model = CH_MaxoutConv3Layer(num_classes=10)
-    #model = CH_ReluConv3Layer(num_classes=10)
-    #CH_MaxOut_ResNet50(num_classes=10), 
-    models = [CH_ReluConv3Layer(num_classes=10)]
+    # Argument parsing
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--batch_chunk', type=int, default=0, help='Batch chunk to process')
+    parser.add_argument('--total_batch_chunks', type=int, default=1, help='Total number of batch chunks')
+    args = parser.parse_args()
 
-    for model in models:
-        loss_object = tf.losses.SparseCategoricalCrossentropy(from_logits=True)
-        optimizer = tf.optimizers.Adam(learning_rate=0.001)
+    # Load data
+    if FLAGS.dataset == "mnist":
+        data, info = ld_mnist()
+        models = {'CH_ReluConv3Layer': CH_ReluConv3Layer(num_classes=10),
+                  'CH_TropConv3LayerLogits': CH_TropConv3LayerLogits(num_classes=10),
+                  'CH_MaxoutConv3Layer': CH_MaxoutConv3Layer(num_classes=10)}
+    elif FLAGS.dataset == "svhn":
+        data, info = ld_svhn()
+        models = {'CH_ReluConv3Layer': CH_ReluConv3Layer(num_classes=10),
+                  'CH_TropConv3LayerLogits': CH_TropConv3LayerLogits(num_classes=10),
+                  'CH_MaxoutConv3Layer': CH_MaxoutConv3Layer(num_classes=10)}
+    else:
+        data, info = ld_cifar10()
+        models = {'CH_ReLU_ResNet50': CH_ReLU_ResNet50(num_classes=10),
+                  'CH_Trop_ResNet50': CH_Trop_ResNet50(num_classes=10),
+                  'CH_MaxOut_ResNet50': CH_MaxOut_ResNet50(num_classes=10)}
+    batch_size = 128  
+    total_test_examples = info.splits['test'].num_examples
+    total_batches = math.ceil(total_test_examples / batch_size)
 
-        # Metrics to track the different accuracies.
-        train_loss = tf.metrics.Mean(name="train_loss")
-        train_acc = tf.metrics.SparseCategoricalAccuracy()
+    batches_per_chunk = total_batches // args.total_batch_chunks
+    start_batch = args.batch_chunk * batches_per_chunk
+
+    # Slicing the test dataset by batches
+    test_data_subset = data.test.skip(start_batch).take(batches_per_chunk)
+
+    models = ['saved_models/CH_TropConv3LayerLogits_0.05_1_False',
+              'saved_models/CH_ReluConv3Layer_0.05_1_False']
+
+    for model_path in models:
+        model = tf.keras.models.load_model(model_path)
+
         test_acc_clean = tf.metrics.SparseCategoricalAccuracy()
         test_acc_fgsm = tf.metrics.SparseCategoricalAccuracy()
         test_acc_pgd_inf = tf.metrics.SparseCategoricalAccuracy()
         test_acc_pgd_2 = tf.metrics.SparseCategoricalAccuracy()
         test_acc_cw = tf.metrics.SparseCategoricalAccuracy()
         test_acc_spsa = tf.metrics.SparseCategoricalAccuracy()
-
-        @tf.function
-        def train_step(x, y):
-            with tf.GradientTape() as tape:
-                predictions = model(x)
-                loss = loss_object(y, predictions)
-            gradients = tape.gradient(loss, model.trainable_variables)
-            optimizer.apply_gradients(zip(gradients, model.trainable_variables))
-            train_loss(loss)
-            train_acc(y, predictions)
-
-        # Train model with adversarial training
-        for epoch in range(FLAGS.nb_epochs):
-            #train_acc = tf.metrics.SparseCategoricalAccuracy()
-            # keras like display of progress
-            progress_bar_train = tf.keras.utils.Progbar(50000)
-            print(f"--epoch {epoch}--")
-            for (x, y) in data.train:
-                if FLAGS.adv_train:
-                    # Replace clean example with adversarial example for adversarial training
-                    #x = projected_gradient_descent(model, x, FLAGS.eps, 0.01, 40, np.inf)
-                    x = fast_gradient_method(model, x, FLAGS.eps, np.inf)
-                train_step(x, y)
-                progress_bar_train.add(x.shape[0], values=[("loss", train_loss.result()), ("acc", train_acc.result())])
-        model.summary()
-        #model.save(f'CH_MaxoutConv3Layer_{FLAGS.eps}_{FLAGS.nb_epochs}_{FLAGS.adv_train}', save_format='tf')
 
         # Evaluate on clean and adversarial data
         progress_bar_test = tf.keras.utils.Progbar(10000)
@@ -140,7 +108,7 @@ def main(_):
             #x_spsa = tf.concat(x_spsa_list, axis=0)
             y_pred_spsa = tf.concat(y_pred_spsa_list, axis=0)
             test_acc_spsa(y, y_pred_spsa)
-
+            
             
             # -- carlini wagner --
             x_cw = carlini_wagner_l2(model, x, 
@@ -153,10 +121,10 @@ def main(_):
             y_pred_cw = model(x_cw)
             test_acc_cw(y, y_pred_cw)
             
-            progress_bar_test.add(x.shape[0])
+            progress_bar_test.add(x.shape[0], values = [("clean", test_acc_clean.result()), ("FGSM", test_acc_fgsm.result()), ("PGD", test_acc_pgd_inf.result()), ("CW", test_acc_cw.result()), ("SPSA", test_acc_spsa.result())])
 
         print("test acc on clean examples (%): {:.3f}".format(test_acc_clean.result() * 100))
-        print("test acc on FGM adversarial examples (%): {:.3f}".format(test_acc_fgsm.result() * 100))
+        print("test acc on FGSM adversarial examples (%): {:.3f}".format(test_acc_fgsm.result() * 100))
         print("test acc on l_inf PGD adversarial examples (%): {:.3f}".format(test_acc_pgd_inf.result() * 100))
         #print("test acc on l_2 PGD adversarial examples (%): {:.3f}".format(test_acc_pgd_2.result() * 100))
         print("test acc on Carlini Wagner adversarial examples (%): {:.3f}".format(test_acc_cw.result() * 100))
@@ -164,7 +132,9 @@ def main(_):
 
 
 if __name__ == "__main__":
+    print("##########      Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
     flags.DEFINE_integer("nb_epochs", 1, "Number of epochs.")
     flags.DEFINE_float("eps", 0.05, "Total epsilon for FGM and PGD attacks.")
     flags.DEFINE_bool("adv_train", False, "Use adversarial training (on PGD adversarial examples).")
+    flags.DEFINE_string("dataset", "mnist", "Specifies dataset used to train the model.")
     app.run(main)

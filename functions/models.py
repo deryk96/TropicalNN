@@ -22,7 +22,7 @@ from custom_layers.initializers import BimodalNormalInitializer
 from tensorflow.keras import Sequential, Model, initializers, models
 from tensorflow.keras.layers import Dense, Concatenate, MaxPooling2D, MaxPooling1D, AveragePooling1D, Activation, Flatten, Conv2D, Dropout, Input, BatchNormalization, ReLU, Add, AveragePooling2D, Reshape, Lambda
 from tensorflow.keras.optimizers import Adam
-from tensorflow import reduce_sum, reduce_max, subtract, reshape, convert_to_tensor
+from tensorflow import reduce_sum, reduce_max, subtract, reshape, convert_to_tensor, shape, cond, cast, concat
 import time
 
 
@@ -41,16 +41,31 @@ class Maxout(Layer):
         self.axis = axis
 
     def call(self, inputs):
-        inputs = convert_to_tensor(inputs)
-        shape = inputs.get_shape().as_list()
+        '''dynamic_shape = inputs.get_shape().as_list()
         # -1 for the last dimension if axis is -1
-        num_channels = shape[self.axis] if self.axis != -1 else shape[-1]
+        num_channels = dynamic_shape[self.axis] if self.axis != -1 else dynamic_shape[-1]
         if num_channels % self.num_units:
             raise ValueError('number of features({}) is not a multiple of num_units({})'.format(num_channels, self.num_units))
-        shape[self.axis] = self.num_units
-        shape += [num_channels // self.num_units]
-        outputs = reduce_max(reshape(inputs, shape), -1)
-        return outputs
+        dynamic_shape[self.axis] = self.num_units
+        dynamic_shape  += [num_channels // self.num_units]
+        step1 = reshape(inputs, dynamic_shape)
+        outputs = reduce_max(step1, -1)
+        return outputs'''
+        # Use tf.shape to get the runtime shape
+        input_shape = shape(inputs)
+        num_channels = input_shape[self.axis]
+
+        # Adjust the shape for the maxout operation
+        new_shape = concat([
+            input_shape[:self.axis],
+            [self.num_units],
+            [num_channels // self.num_units]
+        ], axis=0)
+
+        # Reshape and perform max operation
+        step1 = reshape(inputs, new_shape)
+        return reduce_max(step1, axis=-2)
+
 
 class CH_MaxoutConv3Layer(Model):
     def __init__(self, num_classes, num_maxout_neurons = 10):
@@ -100,13 +115,13 @@ class CH_MaxoutConv3Layer(Model):
         return self
 
 class CH_MaxOut_ResNet50(Model):
-    def __init__(self, num_classes, num_maxout_neurons=10):
+    def __init__(self, num_classes, num_maxout_neurons=10, input_shape = (32, 32, 3)):
         super(CH_MaxOut_ResNet50, self).__init__()
         self.num_classes = num_classes
         self.num_maxout_neurons = num_maxout_neurons
 
         # Initialize ResNet50 base model
-        self.resnet50_base = ResNet50(weights=None, include_top=False, input_shape=(32, 32, 3))
+        self.resnet50_base = ResNet50(weights=None, include_top=False, input_shape=input_shape)
 
         # Define additional layers
         self.global_avg_pooling = GlobalAveragePooling2D()
@@ -130,12 +145,12 @@ class CH_MaxOut_ResNet50(Model):
         return logits
     
 class CH_ReLU_ResNet50(Model):
-    def __init__(self, num_classes):
+    def __init__(self, num_classes, input_shape = (32, 32, 3)):
         super(CH_ReLU_ResNet50, self).__init__()
         self.num_classes = num_classes
 
         # Initialize ResNet50 base model
-        self.resnet50_base = ResNet50(weights=None, include_top=False, input_shape=(32, 32, 3))
+        self.resnet50_base = ResNet50(weights=None, include_top=False, input_shape=input_shape)
 
         # Define additional layers
         self.global_avg_pooling = GlobalAveragePooling2D()
@@ -150,14 +165,14 @@ class CH_ReLU_ResNet50(Model):
 
 
 class CH_Trop_ResNet50(Model):
-    def __init__(self, num_classes, initializer_w=initializers.RandomNormal(0.5, 1), lam=1):
+    def __init__(self, num_classes, initializer_w=initializers.RandomNormal(0.5, 1), lam=1, input_shape = (32, 32, 3)):
         super(CH_Trop_ResNet50, self).__init__()
         self.num_classes = num_classes
 
         self.initializer_w = initializer_w
         self.lam = lam
         # Initialize ResNet50 base model
-        self.resnet50_base = ResNet50(weights=None, include_top=False, input_shape=(32, 32, 3))
+        self.resnet50_base = ResNet50(weights=None, include_top=False, input_shape=input_shape)
 
         # Define additional layers
         self.global_avg_pooling = GlobalAveragePooling2D()
