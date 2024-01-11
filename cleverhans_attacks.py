@@ -1,5 +1,6 @@
+import csv
 import math
-import argparse
+import sys
 import time
 import numpy as np
 import tensorflow as tf
@@ -24,42 +25,34 @@ FLAGS = flags.FLAGS
 
 
 def main(_):
-    # Argument parsing
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--batch_chunk', type=int, default=0, help='Batch chunk to process')
-    parser.add_argument('--total_batch_chunks', type=int, default=1, help='Total number of batch chunks')
-    args = parser.parse_args()
-
     # Load data
     if FLAGS.dataset == "mnist":
         data, info = ld_mnist()
-        models = {'CH_ReluConv3Layer': CH_ReluConv3Layer(num_classes=10),
-                  'CH_TropConv3LayerLogits': CH_TropConv3LayerLogits(num_classes=10),
-                  'CH_MaxoutConv3Layer': CH_MaxoutConv3Layer(num_classes=10)}
     elif FLAGS.dataset == "svhn":
         data, info = ld_svhn()
-        models = {'CH_ReluConv3Layer': CH_ReluConv3Layer(num_classes=10),
-                  'CH_TropConv3LayerLogits': CH_TropConv3LayerLogits(num_classes=10),
-                  'CH_MaxoutConv3Layer': CH_MaxoutConv3Layer(num_classes=10)}
     else:
         data, info = ld_cifar10()
-        models = {'CH_ReLU_ResNet50': CH_ReLU_ResNet50(num_classes=10),
-                  'CH_Trop_ResNet50': CH_Trop_ResNet50(num_classes=10),
-                  'CH_MaxOut_ResNet50': CH_MaxOut_ResNet50(num_classes=10)}
+    
+    cw_targeted = True
+
+    batch_chunk = int(sys.argv[1])
+    total_batch_chunks = int(sys.argv[2])
+
     batch_size = 128  
     total_test_examples = info.splits['test'].num_examples
     total_batches = math.ceil(total_test_examples / batch_size)
 
-    batches_per_chunk = total_batches // args.total_batch_chunks
-    start_batch = args.batch_chunk * batches_per_chunk
+    batches_per_chunk = total_batches // (total_batch_chunks)
+    start_batch = batch_chunk * batches_per_chunk
 
     # Slicing the test dataset by batches
     test_data_subset = data.test.skip(start_batch).take(batches_per_chunk)
 
-    model_paths = ['saved_models/CH_TropConv3LayerLogits_0.05_1_False',
-              'saved_models/CH_ReluConv3Layer_0.05_1_False']
+    model_paths = {'CH_TropConv3LayerLogits': 'saved_models/CH_TropConv3LayerLogits_mnist_0.1_100_False',
+                   'CH_ReluConv3Layer':'saved_models/CH_ReluConv3Layer_mnist_0.1_100_False',
+                   'CH_MaxoutConv3Layer':'saved_models/CH_MaxoutConv3Layer_mnist_0.1_100_False'}
 
-    for model_path in model_paths:
+    for name, model_path in model_paths.items():
         model = tf.keras.models.load_model(model_path)
 
         test_acc_clean = tf.metrics.SparseCategoricalAccuracy()
@@ -70,9 +63,9 @@ def main(_):
         test_acc_spsa = tf.metrics.SparseCategoricalAccuracy()
 
         # Evaluate on clean and adversarial data
-        progress_bar_test = tf.keras.utils.Progbar(10000)
+        progress_bar_test = tf.keras.utils.Progbar(total_test_examples)
 
-        for x, y in data.test:
+        for x, y in test_data_subset: #data.test:
             # -- clean --
             y_pred = model(x)
             test_acc_clean(y, y_pred)
@@ -86,12 +79,12 @@ def main(_):
             x_pgd_inf = projected_gradient_descent(model, x, FLAGS.eps, 0.01, 40, np.inf)
             y_pred_pgd_inf = model(x_pgd_inf)
             test_acc_pgd_inf(y, y_pred_pgd_inf)
-            '''
+            
             # -- l_2 || projected gradient descent --
             x_pgd_2 = projected_gradient_descent(model, x, FLAGS.eps, 0.01, 40, 2)
             y_pred_pgd_2 = model(x_pgd_2)
             test_acc_pgd_2(y, y_pred_pgd_2)
-            '''
+           
             # -- spsa --
             #x_spsa_list = []
             y_pred_spsa_list = []
@@ -99,8 +92,8 @@ def main(_):
             for i in range(x.shape[0]):
                 x_single = x[i:i+1]
                 x_spsa_single = spsa(model, x=x_single, y=y[i], eps=FLAGS.eps, 
-                                nb_iter=2, learning_rate=0.01, delta=0.01, 
-                                spsa_samples=12, spsa_iters=1,
+                                nb_iter=100, learning_rate=0.01, delta=0.01, 
+                                spsa_samples=128, spsa_iters=1,
                                 clip_min=-1, clip_max=1)
                 #x_spsa_list.append(x_spsa_single)
                 y_pred_spsa_single = model(x_spsa_single)
@@ -111,13 +104,21 @@ def main(_):
             
             
             # -- carlini wagner --
-            x_cw = carlini_wagner_l2(model, x, 
+            if cw_targeted:
+                max_class = tf.reduce_max(y)
+                random_tensor = tf.random.uniform(shape=y.shape, minval=0, maxval=max_class+1, dtype=tf.int64)
+                random_tensor = tf.where(random_tensor == y, (random_tensor + 1) % (max_class+1), random_tensor)
+            else:
+                random_tensor = None
+            x_cw = carlini_wagner_l2(model, x, y = random_tensor,
+                                    abort_early=True, 
                                     clip_min=-1.0, 
-                                    max_iterations=10, 
-                                    binary_search_steps=2,
+                                    max_iterations=10000, 
+                                    binary_search_steps=9,
                                     confidence=0,
                                     initial_const=1e-2,
-                                    learning_rate=1e-2)
+                                    learning_rate=1e-2,
+                                    loss_add = 50)
             y_pred_cw = model(x_cw)
             test_acc_cw(y, y_pred_cw)
             
@@ -126,15 +127,39 @@ def main(_):
         print("test acc on clean examples (%): {:.3f}".format(test_acc_clean.result() * 100))
         print("test acc on FGSM adversarial examples (%): {:.3f}".format(test_acc_fgsm.result() * 100))
         print("test acc on l_inf PGD adversarial examples (%): {:.3f}".format(test_acc_pgd_inf.result() * 100))
-        #print("test acc on l_2 PGD adversarial examples (%): {:.3f}".format(test_acc_pgd_2.result() * 100))
+        print("test acc on l_2 PGD adversarial examples (%): {:.3f}".format(test_acc_pgd_2.result() * 100))
         print("test acc on Carlini Wagner adversarial examples (%): {:.3f}".format(test_acc_cw.result() * 100))
         print("test acc on SPSA adversarial examples (%): {:.3f}".format(test_acc_spsa.result() * 100))
+
+        # Assuming you have already calculated these accuracies
+        test_acc_clean_value = test_acc_clean.result().numpy()
+        test_acc_fgsm_value = test_acc_fgsm.result().numpy()
+        test_acc_pgd_inf_value = test_acc_pgd_inf.result().numpy()
+        test_acc_pgd_2_value = test_acc_pgd_2.result().numpy()
+        test_acc_cw_value = test_acc_cw.result().numpy()
+        test_acc_spsa_value = test_acc_spsa.result().numpy()
+
+        # Prepare the data to be written to CSV
+        accuracy_data = [test_acc_clean_value, test_acc_fgsm_value, test_acc_pgd_inf_value, 
+                        test_acc_pgd_2_value, test_acc_cw_value, test_acc_spsa_value]
+
+        # Specify the CSV file name
+        csv_file = f'attack_results/{name}_{FLAGS.dataset}_{FLAGS.eps}_{batch_chunk}_of_{total_batch_chunks}.csv'
+
+        # Write to CSV
+        with open(csv_file, mode='w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow(['Test Accuracy Clean', 'Test Accuracy FGSM', 'Test Accuracy PGD Inf', 
+                            'Test Accuracy PGD 2', 'Test Accuracy CW', 'Test Accuracy SPSA'])
+            writer.writerow(accuracy_data)
+
+        print(f"Accuracies written to {csv_file}")
 
 
 if __name__ == "__main__":
     print("##########      Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
-    flags.DEFINE_integer("nb_epochs", 1, "Number of epochs.")
-    flags.DEFINE_float("eps", 0.05, "Total epsilon for FGM and PGD attacks.")
+    flags.DEFINE_integer("nb_epochs", 100, "Number of epochs.")
+    flags.DEFINE_float("eps", 0.1, "Total epsilon for FGM and PGD attacks.")
     flags.DEFINE_bool("adv_train", False, "Use adversarial training (on PGD adversarial examples).")
     flags.DEFINE_string("dataset", "mnist", "Specifies dataset used to train the model.")
     app.run(main)

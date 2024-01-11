@@ -17,9 +17,10 @@ def main(_):
     # Load training and test data
     if FLAGS.dataset == "mnist":
         data, info = ld_mnist()
-        models = {'CH_ReluConv3Layer': CH_ReluConv3Layer(num_classes=10),
-                  'CH_TropConv3LayerLogits': CH_TropConv3LayerLogits(num_classes=10),
-                  'CH_MaxoutConv3Layer': CH_MaxoutConv3Layer(num_classes=10)}
+        models = {#'CH_ReluConv3Layer': CH_ReluConv3Layer(num_classes=10),
+                  'CH_TropConv3LayerLogits': CH_TropConv3LayerLogits(num_classes=10)
+                  #'CH_MaxoutConv3Layer': CH_MaxoutConv3Layer(num_classes=10)
+                  }
     elif FLAGS.dataset == "svhn":
         data, info = ld_svhn()
         models = {'CH_ReluConv3Layer': CH_ReluConv3Layer(num_classes=10),
@@ -30,8 +31,11 @@ def main(_):
         models = {'CH_ReLU_ResNet50': CH_ReLU_ResNet50(num_classes=10),
                   'CH_Trop_ResNet50': CH_Trop_ResNet50(num_classes=10),
                   'CH_MaxOut_ResNet50': CH_MaxOut_ResNet50(num_classes=10)}
-
+    boo_tropical = False
     for name, model in models.items():
+        if 'Trop' in name:
+            boo_tropical = True
+        
         loss_object = tf.losses.SparseCategoricalCrossentropy(from_logits=True)
         optimizer = tf.optimizers.Adam(learning_rate=0.001)
 
@@ -69,7 +73,7 @@ def main(_):
 
 if __name__ == "__main__":
     print("##########      Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
-    flags.DEFINE_integer("nb_epochs", 1, "Number of epochs.")
+    flags.DEFINE_integer("nb_epochs", 10, "Number of epochs.")
     flags.DEFINE_float("eps", 0.05, "Total epsilon for FGM and PGD attacks.")
     flags.DEFINE_bool("adv_train", False, "Use adversarial training (on PGD adversarial examples).")
     flags.DEFINE_string("dataset", "mnist", "Specifies dataset used to train the model.")

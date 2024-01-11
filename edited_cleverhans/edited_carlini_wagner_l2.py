@@ -32,6 +32,7 @@ class CarliniWagnerL2(object):
         confidence=0.0,
         initial_const=1e-2,
         learning_rate=5e-3,
+        loss_add = 0
     ):
         """
         This attack was originally proposed by Carlini and Wagner. It is an
@@ -91,6 +92,8 @@ class CarliniWagnerL2(object):
 
         self.confidence = confidence
         self.initial_const = initial_const
+
+        self.loss_add = loss_add
 
         # the optimizer
         self.optimizer = tf.keras.optimizers.Adam(self.learning_rate)
@@ -282,7 +285,7 @@ class CarliniWagnerL2(object):
         with tf.GradientTape() as tape:
             adv_image = modifier + x
             x_new = clip_tanh(adv_image, clip_min=self.clip_min, clip_max=self.clip_max)
-            preds = self.model_fn(x_new)
+            preds = self.model_fn(x_new) 
             loss, l2_dist = loss_fn(
                 x=x,
                 x_new=x_new,
@@ -290,9 +293,9 @@ class CarliniWagnerL2(object):
                 y_pred=preds,
                 confidence=self.confidence,
                 const=const,
-                targeted=self.targeted,
+                targeted=True,#self.targeted,
                 clip_min=self.clip_min,
-                clip_max=self.clip_max,
+                clip_max=self.clip_max
             )
 
         grads = tape.gradient(loss, adv_image)
@@ -313,7 +316,7 @@ def loss_fn(
     const=0,
     targeted=False,
     clip_min=0,
-    clip_max=1,
+    clip_max=1
 ):
     other = clip_tanh(x, clip_min=clip_min, clip_max=clip_max)
     l2_dist = l2(x_new, other)
@@ -332,7 +335,7 @@ def loss_fn(
     loss_2 = tf.reduce_sum(l2_dist)
     #loss_1 = tf.reduce_sum(const * tf.reshape(loss_1, [-1, 1, 1, 1]))
     loss_1 = tf.reduce_sum(const * loss_1)
-    loss = loss_1 + loss_2
+    loss = loss_1 + loss_2 #### I EDITED HERE
     return loss, l2_dist
 
 
