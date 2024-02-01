@@ -70,33 +70,33 @@ def convert_types(image, label):
     image -= 1.0
     return image, label
 
-def ld_mnist():
+def ld_mnist(batch_size = 128):
     """Load MNIST training and test data."""
     dataset, info = tfds.load("mnist", with_info=True, as_supervised=True)
 
     mnist_train, mnist_test = dataset["train"], dataset["test"]
-    mnist_train = mnist_train.map(convert_types).shuffle(10000).batch(128)
-    mnist_test = mnist_test.map(convert_types).batch(128)
+    mnist_train = mnist_train.map(convert_types).shuffle(10000).batch(batch_size)
+    mnist_test = mnist_test.map(convert_types).batch(batch_size)
 
     return EasyDict(train=mnist_train, test=mnist_test), info
 
-def ld_svhn():
+def ld_svhn(batch_size = 128):
     """Load SVHN training and test data."""
     dataset, info = tfds.load("svhn_cropped", with_info=True, as_supervised=True)
 
     svhn_train, svhn_test = dataset["train"], dataset["test"]
-    svhn_train = svhn_train.map(convert_types).shuffle(10000).batch(128)
-    svhn_test = svhn_test.map(convert_types).batch(128)
+    svhn_train = svhn_train.map(convert_types).shuffle(10000).batch(batch_size)
+    svhn_test = svhn_test.map(convert_types).batch(batch_size)
 
     return EasyDict(train=svhn_train, test=svhn_test), info
 
-def ld_cifar10():
+def ld_cifar10(batch_size = 128):
     """Load CIFAR-10 training and test data."""
     dataset, info = tfds.load("cifar10", with_info=True, as_supervised=True)
 
     cifar10_train, cifar10_test = dataset["train"], dataset["test"]
-    cifar10_train = cifar10_train.map(convert_types).shuffle(10000).batch(128)
-    cifar10_test = cifar10_test.map(convert_types).batch(128)
+    cifar10_train = cifar10_train.map(convert_types).shuffle(10000).batch(batch_size)
+    cifar10_test = cifar10_test.map(convert_types).batch(batch_size)
 
     return EasyDict(train=cifar10_train, test=cifar10_test), info
 

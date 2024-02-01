@@ -45,18 +45,19 @@ def main(_):
         FLAGS.dataset = arg_dataset
         
     num_classes = 10
-    cw_targeted = True
+    cw_targeted = False
     check = False
-
+    print("starting run")
     # Load data
     if FLAGS.dataset == "mnist":
         FLAGS.eps = 0.2
         data, info = ld_mnist(batch_size = batch_size)
         if adv_train == 'yes':
             model_paths = {
-                       'CH_TropConv3Layer': 'saved_models/CH_TropConv3Layer_mnist_0.2_100_True',
-                       'CH_ReluConv3Layer':'saved_models/CH_ReluConv3Layer_mnist_0.2_100_True',
-                       'CH_MaxoutConv3Layer':'saved_models/CH_MaxoutConv3Layer_mnist_0.2_100_True',
+                       'CH_TropConv3Layer_yes_adv': 'saved_models/CH_TropConv3Layer_mnist_0.2_100_True',
+                       'CH_TropConv3Layer_no_adv': 'saved_models/CH_TropConv3Layer_mnist_0.1_100_False',
+                       #'CH_ReluConv3Layer':'saved_models/CH_ReluConv3Layer_mnist_0.2_100_True',
+                       #'CH_MaxoutConv3Layer':'saved_models/CH_MaxoutConv3Layer_mnist_0.2_100_True',
                         }
         else:
             model_paths = {
@@ -93,8 +94,8 @@ def main(_):
         else:
             model_paths = {
                        'CH_TropConv3Layer': 'saved_models/CH_Trop_ResNet50_cifar_0.01568627450980392_100_False',
-                       'CH_ReluConv3Layer':'saved_models/CH_ReLU_ResNet50_cifar_0.01568627450980392_100_False',
-                       'CH_MaxoutConv3Layer':'saved_models/CH_MaxOut_ResNet50_cifar_0.01568627450980392_100_False',
+                       #'CH_ReluConv3Layer':'saved_models/CH_ReLU_ResNet50_cifar_0.01568627450980392_100_False',
+                       #'CH_MaxoutConv3Layer':'saved_models/CH_MaxOut_ResNet50_cifar_0.01568627450980392_100_False',
                         }
     
 
@@ -124,6 +125,7 @@ def main(_):
         # Evaluate on clean and adversarial data
         progress_bar_test = tf.keras.utils.Progbar(total_test_examples)
         l2_x_cw_avgs = []
+        batch_size = 0
         for x, y in test_data_subset: #data.test:
             input_elements = 1
             for i in range(1, len(x.shape)):
@@ -136,7 +138,7 @@ def main(_):
             y_pred = model(x)
             test_acc_clean(y, y_pred)
             print("clean done", time.time())
-            
+            '''
             # -- l_1 || projected gradient descent --
             x_pgd_1 = l1_projected_gradient_descent(model, 
                                                      x, 
@@ -206,7 +208,7 @@ def main(_):
                         'model_fn' : model, 
                         'x' : x, 
                         'y' : None,
-                        'abort_early' : False, 
+                        'abort_early' : True, 
                         'clip_min' : -1.0, 
                         'max_iterations' : 1000, 
                         'binary_search_steps' : 10,
@@ -218,6 +220,7 @@ def main(_):
             if cw_targeted:
                 list_cw_x = []
                 for i in range(num_classes):
+                    print("cw", i, time.time())
                     y_current = tf.fill(y.shape, i)
                     cw_args['y'] = y_current
                     x_cw_curr = carlini_wagner_l2(**cw_args)
@@ -226,9 +229,9 @@ def main(_):
                 for i in range(num_classes):
                     l2_tensor = l2(x, list_cw_x[i])
                     mask_true_class = tf.equal(y, i)
-                    l2_tensor = tf.where(mask_true_class, tf.constant(10000, dtype=tf.float32), l2_tensor)
+                    l2_tensor = tf.where(mask_true_class, tf.constant(1000, dtype=tf.float32), l2_tensor)
                     mask_no_example_found = tf.equal(l2_tensor, 0.0)
-                    l2_tensor = tf.where(mask_no_example_found, tf.constant(9000, dtype=tf.float32), l2_tensor)
+                    l2_tensor = tf.where(mask_no_example_found, tf.constant(900, dtype=tf.float32), l2_tensor)
                     list_cw_l2.append(l2_tensor)
                 combined_x_tensor = tf.stack(list_cw_x)
                 argmin_non_zero_values = tf.argmin(tf.stack(list_cw_l2) , axis=0) # Find the indices (dimensions) of the minimum non-zero values
@@ -242,8 +245,14 @@ def main(_):
             l2_x_cw = l2(x, x_cw)
             non_zero_mask = tf.not_equal(l2_x_cw, 0.0)
             non_zero_values = tf.boolean_mask(l2_x_cw, non_zero_mask)
-            l2_x_cw_avgs.append(tf.reduce_mean(non_zero_values).numpy().item())
-            print(sum(l2_x_cw_avgs)/len(l2_x_cw_avgs))
+            
+            # Check if non_zero_values is empty
+            if tf.size(non_zero_values) == 0:
+                # Append 0 when there are no non-zero values
+                l2_x_cw_avgs.append(0.0)
+            else:
+                # Otherwise, calculate the mean and append it
+                l2_x_cw_avgs.append(tf.reduce_mean(non_zero_values).numpy().item())
             y_pred_cw = model(x_cw)
             test_acc_cw(y, y_pred_cw)
             print("cw done", time.time())
@@ -254,6 +263,8 @@ def main(_):
             y_pred_spsa_list = []
 
             for i in range(x.shape[0]):
+                #if (i%1)==0:
+                    #print("spsa", i, time.time())
                 x_spsa_single = spsa(model, 
                                       x=x[i:i+1], 
                                       y=y[i], 
@@ -272,7 +283,7 @@ def main(_):
             y_pred_spsa = tf.concat(y_pred_spsa_list, axis=0)
             test_acc_spsa(y, y_pred_spsa)
             print("spsa done", time.time())
-            '''
+            
             if check:
                 plot_images_in_grid(list_of_xs = [x, x_fgsm, x_pgd_inf, x_pgd_2, x_pgd_1, x_cw, x_spsa], 
                                     row_labels = [y[z] for z in range(10)], 
@@ -281,59 +292,65 @@ def main(_):
                                     input_elements = input_elements,
                                     )
                 check = False
-            
+            batch_size += x.shape[0]
             progress_bar_test.add(x.shape[0], values = [("clean", test_acc_clean.result()),
-                                                        ("FGSM", test_acc_fgsm.result()),
-                                                        ('PGD L1', test_acc_pgd_1.result()),
-                                                        ('PGD L2', test_acc_pgd_2.result()),
-                                                        ("PGD Linf", test_acc_pgd_inf.result()), 
-                                                        #("CW", test_acc_cw.result()), 
-                                                        #("SPSA", test_acc_spsa.result())
+                                                        #("FGSM", test_acc_fgsm.result()),
+                                                        #('PGD L1', test_acc_pgd_1.result()),
+                                                        #('PGD L2', test_acc_pgd_2.result()),
+                                                        #("PGD Linf", test_acc_pgd_inf.result()), 
+                                                        ("CW", test_acc_cw.result()), 
+                                                        ("SPSA", test_acc_spsa.result())
                                                         ])
 
         print("test acc on clean examples (%): {:.3f}".format(test_acc_clean.result() * 100))
-        print("test acc on FGSM adversarial examples (%): {:.3f}".format(test_acc_fgsm.result() * 100))
-        print("test acc on l_inf PGD adversarial examples (%): {:.3f}".format(test_acc_pgd_inf.result() * 100))
-        print("test acc on l_2 PGD adversarial examples (%): {:.3f}".format(test_acc_pgd_2.result() * 100))
-        print("test acc on l_1 PGD adversarial examples (%): {:.3f}".format(test_acc_pgd_1.result() * 100))
-        #print("test acc on Carlini Wagner adversarial examples (%): {:.3f}".format(test_acc_cw.result() * 100))
-        #print("test acc on SPSA adversarial examples (%): {:.3f}".format(test_acc_spsa.result() * 100))
+        #print("test acc on FGSM adversarial examples (%): {:.3f}".format(test_acc_fgsm.result() * 100))
+        #print("test acc on l_inf PGD adversarial examples (%): {:.3f}".format(test_acc_pgd_inf.result() * 100))
+        #print("test acc on l_2 PGD adversarial examples (%): {:.3f}".format(test_acc_pgd_2.result() * 100))
+        #print("test acc on l_1 PGD adversarial examples (%): {:.3f}".format(test_acc_pgd_1.result() * 100))
+        print("test acc on Carlini Wagner adversarial examples (%): {:.3f}".format(test_acc_cw.result() * 100))
+        print("test acc on SPSA adversarial examples (%): {:.3f}".format(test_acc_spsa.result() * 100))
 
         # Assuming you have already calculated these accuracies
         test_acc_clean_value = test_acc_clean.result().numpy()
-        test_acc_fgsm_value = test_acc_fgsm.result().numpy()
-        test_acc_pgd_inf_value = test_acc_pgd_inf.result().numpy()
-        test_acc_pgd_2_value = test_acc_pgd_2.result().numpy()
-        test_acc_pgd_1_value = test_acc_pgd_1.result().numpy()
-        #test_acc_cw_value = test_acc_cw.result().numpy()
-        #test_acc_spsa_value = test_acc_spsa.result().numpy()
-        #l2_x_cw_avg = sum(l2_x_cw_avgs)/len(l2_x_cw_avgs)
+        #test_acc_fgsm_value = test_acc_fgsm.result().numpy()
+        #test_acc_pgd_inf_value = test_acc_pgd_inf.result().numpy()
+        #test_acc_pgd_2_value = test_acc_pgd_2.result().numpy()
+        #test_acc_pgd_1_value = test_acc_pgd_1.result().numpy()
+        test_acc_cw_value = test_acc_cw.result().numpy()
+        test_acc_spsa_value = test_acc_spsa.result().numpy()
+        non_zero_l2_x_cw_avg = [element for element in l2_x_cw_avgs if element > 0]
+        if len(non_zero_l2_x_cw_avg) == 0:
+            l2_x_cw_avg = 0.0
+        else:
+            l2_x_cw_avg = sum(non_zero_l2_x_cw_avg)/len(non_zero_l2_x_cw_avg)
 
         # Prepare the data to be written to CSV
         accuracy_data = [test_acc_clean_value, 
-                         test_acc_pgd_1_value,
-                         test_acc_pgd_2_value,
-                         test_acc_fgsm_value,
-                         test_acc_pgd_inf_value,
-                         #test_acc_cw_value, 
-                         #test_acc_spsa_value,
-                         #l2_x_cw_avg
+                         #test_acc_pgd_1_value,
+                         #test_acc_pgd_2_value,
+                         #test_acc_fgsm_value,
+                         #test_acc_pgd_inf_value,
+                         test_acc_cw_value, 
+                         test_acc_spsa_value,
+                         l2_x_cw_avg,
+                         batch_size
                          ]
 
         # Specify the CSV file name
-        csv_file = f'attack_results/{FLAGS.dataset}_{adv_train}_adv/{name}_{FLAGS.dataset}_{FLAGS.eps}_{batch_chunk}_of_{total_batch_chunks}_no_cw_spsa.csv'
+        csv_file = f'attack_results/{FLAGS.dataset}_{adv_train}_adv/{name}_{FLAGS.dataset}_{FLAGS.eps}_{batch_chunk}_of_{total_batch_chunks}_just_cw_spsa.csv'
 
         # Write to CSV
         with open(csv_file, mode='w', newline='') as file:
             writer = csv.writer(file)
             writer.writerow(['Clean', 
-                             'PGD L1', 
-                             'PGD L2', 
-                             'FGSM', 
-                             'PGD Linf',
-                             #'CW', 
-                             #'SPSA',
-                             #'CW L2 Distortion Avg',
+                             #'PGD L1', 
+                             #'PGD L2', 
+                             #'FGSM', 
+                             #'PGD Linf',
+                             'CW', 
+                             'SPSA',
+                             'CW L2 Distortion Avg',
+                             'batch_size',
                              ])
             writer.writerow(accuracy_data)
 

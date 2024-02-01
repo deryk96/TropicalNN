@@ -68,36 +68,40 @@ class Maxout(Layer):
 
 
 class CH_MaxoutConv3Layer(Model):
-    def __init__(self, num_classes, num_maxout_neurons = 10):
+    def __init__(self, num_classes, num_maxout_neurons = 100, dropout_rate = 0.5):
         super(CH_MaxoutConv3Layer, self).__init__()
         self.num_classes = num_classes
         self.num_maxout_neurons = num_maxout_neurons
+        self.dropout_rate = dropout_rate
         self._build_model()
 
     def _build_model(self):
         self.conv_layers = Sequential([
-            Conv2D(64, (3,3), padding='same'),
+            Conv2D(64, (3,3), activation='relu'),
             MaxPooling2D((2, 2)),
-            Conv2D(64, (3, 3), padding='same'),
+            Conv2D(64, (3, 3), activation='relu'),
             MaxPooling2D((2, 2)),
-            Conv2D(64, (3, 3), padding='same'),
+            Conv2D(64, (3, 3), activation='relu'),
             Flatten()
         ])
-
         self.dense_layer = Dense(64)
         self.dense_1 = Dense(self.num_maxout_neurons * self.num_classes)
         self.dense_2 = Dense(self.num_maxout_neurons * self.num_classes)
+        self.dropout_1 = Dropout(self.dropout_rate)
+        self.dropout_2 = Dropout(self.dropout_rate)
         self.maxout_1 = Maxout(num_units=self.num_classes, axis=-1)
         self.maxout_2 = Maxout(num_units=self.num_classes, axis=-1)
 
-    def call(self, inputs, training=False):
+    def call(self, inputs, training=True):
         x = self.conv_layers(inputs)
         x = self.dense_layer(x)
         
         x_1 = self.dense_1(x)
+        x_1 = self.dropout_1(x_1)#, training=training)
         x_1 = self.maxout_1(x_1)
 
         x_2 = self.dense_2(x)
+        x_2 = self.dropout_1(x_2)#, training=training)
         x_2 = self.maxout_2(x_2)
 
         logits = x_1 - x_2
@@ -115,10 +119,11 @@ class CH_MaxoutConv3Layer(Model):
         return self
 
 class CH_MaxOut_ResNet50(Model):
-    def __init__(self, num_classes, num_maxout_neurons=10, input_shape = (32, 32, 3)):
+    def __init__(self, num_classes, num_maxout_neurons=100, input_shape = (32, 32, 3), dropout_rate = 0.5):
         super(CH_MaxOut_ResNet50, self).__init__()
         self.num_classes = num_classes
         self.num_maxout_neurons = num_maxout_neurons
+        self.dropout_rate = dropout_rate
 
         # Initialize ResNet50 base model
         self.resnet50_base = ResNet50(weights=None, include_top=False, input_shape=input_shape)
@@ -128,17 +133,22 @@ class CH_MaxOut_ResNet50(Model):
         self.dense_layer = Dense(64, activation='relu')
         self.dense_1 = Dense(self.num_maxout_neurons * self.num_classes)
         self.dense_2 = Dense(self.num_maxout_neurons * self.num_classes)
+        self.dropout_1 = Dropout(self.dropout_rate)
+        self.dropout_2 = Dropout(self.dropout_rate)
         self.maxout_1 = Maxout(num_units=self.num_classes, axis=-1)
         self.maxout_2 = Maxout(num_units=self.num_classes, axis=-1)
 
-    def call(self, inputs, training=False):
+    def call(self, inputs, training=True):
         x = self.resnet50_base(inputs, training=training)
         x = self.global_avg_pooling(x)
         x = self.dense_layer(x)
+
         x_1 = self.dense_1(x)
+        x_1 = self.dropout_1(x_1)#, training=training)
         x_1 = self.maxout_1(x_1)
 
         x_2 = self.dense_2(x)
+        x_2 = self.dropout_1(x_2)#, training=training)
         x_2 = self.maxout_2(x_2)
 
         logits = x_1 - x_2
@@ -157,7 +167,7 @@ class CH_ReLU_ResNet50(Model):
         self.dense_layer = Dense(64, activation='relu')
         self.final_layer = Dense(num_classes)
 
-    def call(self, inputs, training=False):
+    def call(self, inputs, training=True):
         x = self.resnet50_base(inputs, training=training)
         x = self.global_avg_pooling(x)
         x = self.dense_layer(x)
@@ -181,7 +191,7 @@ class CH_Trop_ResNet50(Model):
         self.change_sign = ChangeSignLayer()
         #self.final_layer = Activation('softmax')
 
-    def call(self, inputs, training=False):
+    def call(self, inputs, training=True):
         x = self.resnet50_base(inputs, training=training)
         x = self.global_avg_pooling(x)
         x = self.dense_layer(x)
@@ -191,7 +201,112 @@ class CH_Trop_ResNet50(Model):
         return logits
 
 
+class CH_MMRReLU_ResNet50(Model):
+    def __init__(self, num_classes, input_shape=(32, 32, 3)):
+        super(CH_MMRReLU_ResNet50, self).__init__()
+        self.num_classes = num_classes
+
+        # Initialize ResNet50 base model
+        self.resnet50_base = ResNet50(weights=None, include_top=False, input_shape=input_shape)
+
+        # Define additional layers
+        self.global_avg_pooling = GlobalAveragePooling2D()
+        self.dense_layer = Dense(64, activation=None)  # Remove activation here
+        self.final_layer = Dense(num_classes)
+
+    def call(self, inputs, training=True, return_feature_maps=False):
+        feature_maps = []
+
+        # Get feature maps from ResNet50 base layers
+        x = self.resnet50_base(inputs, training=training)
+        if return_feature_maps:
+            # Collect pre-activation feature maps from ResNet50 layers if needed
+            # This may require accessing internal layers of ResNet50
+            for layer in self.resnet50_base.layers:
+                x = layer(x)
+                feature_maps.append(x)
+
+        # Apply global average pooling
+        x = self.global_avg_pooling(x)
+
+        # Get pre-activation feature map from dense layer
+        pre_activation = self.dense_layer(x)
+        if return_feature_maps:
+            feature_maps.append(pre_activation)
+
+        # Apply ReLU activation and final dense layer
+        x = Activation('relu')(pre_activation)
+        logits = self.final_layer(x)
+
+        if return_feature_maps:
+            return logits, feature_maps
+        return logits
+
+    
+
+class CH_MMRReluConv3Layer(Model):
+    def __init__(self, num_classes, initializer_relu=initializers.RandomNormal(mean=0.5, stddev=1., seed=0)):
+        super(CH_MMRReluConv3Layer, self).__init__()
+        self.num_classes = num_classes
+        self.initializer_relu = initializer_relu
+        self._build_model()
+
+    def _build_model(self):
+        self.conv_layer1 = Conv2D(64, (3,3), activation='relu')
+        self.max_layer1 = MaxPooling2D((2, 2))
+        self.conv_layer2 = Conv2D(64, (3, 3), activation='relu')
+        self.max_layer2 = MaxPooling2D((2, 2))
+        self.conv_layer3 = Conv2D(64, (3, 3), activation='relu')
+        self.flatten = Flatten()  
+
+        self.dense_layer = Dense(64, activation='relu')
+        self.final_layer = Dense(self.num_classes, kernel_initializer=self.initializer_relu)
+
+    def call(self, inputs, training=True, return_feature_maps=False):
+        feature_maps = []
+
+        x = self.conv_layer1(inputs)
+        if return_feature_maps:
+            feature_maps.append(x)
+
+        x = self.max_layer1(x)
+
+        x = self.conv_layer2(x)
+        if return_feature_maps:
+            feature_maps.append(x)
+
+        x = self.max_layer2(x)
+
+        x = self.conv_layer3(x)
+        if return_feature_maps:
+            feature_maps.append(x)
+
+        x = self.flatten(x)
+
+        x = self.dense_layer(x)
+        if return_feature_maps:
+            feature_maps.append(x)
+
+        logits = self.final_layer(x)
+        if return_feature_maps:
+            feature_maps.append(logits)
+            return logits, feature_maps
+        return logits
+
+    def compile_model(self, loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy']):
+        self.compile(optimizer=optimizer, loss=loss, metrics=metrics)
+
+    def fit_model(self, x_train, y_train, num_epochs=10, batch_size=64, verbose=1):
+        start_time = time.time()
+        self.fit(x_train, y_train, epochs=num_epochs, batch_size=batch_size, verbose=verbose)
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        print(f"Model built. Elapsed time: {elapsed_time:.2f} seconds | {elapsed_time / 60:.2f} minutes.")
+        return self
+
+
 class CH_ReluConv3Layer(Model):
+
     def __init__(self, num_classes, initializer_relu=initializers.RandomNormal(mean=0.5, stddev=1., seed=0)):
         super(CH_ReluConv3Layer, self).__init__()
         self.num_classes = num_classes
@@ -211,7 +326,7 @@ class CH_ReluConv3Layer(Model):
         self.dense_layer = Dense(64, activation='relu')
         self.final_layer = Dense(self.num_classes, kernel_initializer=self.initializer_relu)
 
-    def call(self, inputs, training=False):
+    def call(self, inputs, training=True):
         x = self.conv_layers(inputs)
         x = self.dense_layer(x)
         logits = self.final_layer(x)
@@ -249,12 +364,16 @@ class CH_TropConv3LayerLogits(Model):
         ])
 
         self.dense_layer = Dense(64, activation='relu', name='dense')
-        self.final_layer = TropEmbedMaxMinLogits(self.num_classes, initializer_w=self.initializer_w, lam=self.lam)
+        self.trop_act = TropEmbedMaxMin(self.num_classes, initializer_w=self.initializer_w, lam=self.lam)
+        self.change_sign = ChangeSignLayer()
+        #self.final_layer = Activation('softmax')
 
-    def call(self, inputs, training=False):
+    def call(self, inputs, training=True):
         x = self.conv_layers(inputs)
         x = self.dense_layer(x)
-        logits = self.final_layer(x)
+        x = self.trop_act(x)
+        logits = self.change_sign(x)
+        #logits = self.final_layer(x)
         return logits
 
     def compile_model(self, loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy']):
