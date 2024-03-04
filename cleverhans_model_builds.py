@@ -17,9 +17,9 @@ def main(_):
     # Load training and test data
     if FLAGS.dataset == "mnist":
         data, info = ld_mnist()
-        models = {#'CH_ReluConv3Layer': CH_ReluConv3Layer(num_classes=10),
-                  'CH_TropConv3LayerLogits': CH_TropConv3LayerLogits(num_classes=10)
-                  #'CH_MaxoutConv3Layer': CH_MaxoutConv3Layer(num_classes=10)
+        models = {'CH_ReluConv3Layer': CH_ReluConv3Layer(num_classes=10),
+                  'CH_TropConv3LayerLogits': CH_TropConv3LayerLogits(num_classes=10),
+                  'CH_MaxoutConv3Layer': CH_MaxoutConv3Layer(num_classes=10)
                   }
     elif FLAGS.dataset == "svhn":
         data, info = ld_svhn()
@@ -62,8 +62,8 @@ def main(_):
             for (x, y) in data.train:
                 if FLAGS.adv_train:
                     # Replace clean example with adversarial example for adversarial training
-                    #x = projected_gradient_descent(model, x, FLAGS.eps, 0.01, 40, np.inf)
-                    x = fast_gradient_method(model, x, FLAGS.eps, np.inf)
+                    x = projected_gradient_descent(model, x, FLAGS.eps, 0.01, 40, np.inf)
+                    #x = fast_gradient_method(model, x, FLAGS.eps, np.inf)
                 train_step(x, y)
                 progress_bar_train.add(x.shape[0], values=[("loss", train_loss.result()), ("acc", train_acc.result())])
         elapsed = time.time() - start
@@ -73,7 +73,7 @@ def main(_):
 
 if __name__ == "__main__":
     print("##########      Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
-    flags.DEFINE_integer("nb_epochs", 10, "Number of epochs.")
+    flags.DEFINE_integer("nb_epochs", 100, "Number of epochs.")
     flags.DEFINE_float("eps", 0.05, "Total epsilon for FGM and PGD attacks.")
     flags.DEFINE_bool("adv_train", False, "Use adversarial training (on PGD adversarial examples).")
     flags.DEFINE_string("dataset", "mnist", "Specifies dataset used to train the model.")

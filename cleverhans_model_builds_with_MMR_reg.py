@@ -15,7 +15,7 @@ from custom_layers.mmr_regularizer import mmr_cnn
 
 FLAGS = flags.FLAGS
 
-batch_size = 128
+batch_size = 32
 
 def main(_):
     # Load training and test data
@@ -36,7 +36,8 @@ def main(_):
         lr = 1e-3
 
     for name, model in models.items():
-        model.build(input_shape=(None, 28, 28, 1))       
+        model.build(input_shape=(None, 32, 32, 3))       
+
         loss_object = tf.losses.SparseCategoricalCrossentropy(from_logits=True)
         optimizer = tf.optimizers.Adam(learning_rate=0.001)
 
@@ -120,7 +121,7 @@ def main(_):
 if __name__ == "__main__":
     print("##########      Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
     flags.DEFINE_integer("nb_epochs", 100, "Number of epochs.")
-    flags.DEFINE_float("eps", 0.1, "Total epsilon for FGM and PGD attacks.")
+    flags.DEFINE_float("eps", 4/255, "Total epsilon for FGM and PGD attacks.")
     flags.DEFINE_bool("adv_train", False, "Use adversarial training (on PGD adversarial examples).")
-    flags.DEFINE_string("dataset", "mnist", "Specifies dataset used to train the model.")
+    flags.DEFINE_string("dataset", "svhn", "Specifies dataset used to train the model.")
     app.run(main)

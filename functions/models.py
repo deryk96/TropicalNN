@@ -68,10 +68,11 @@ class Maxout(Layer):
 
 
 class CH_MaxoutConv3Layer(Model):
-    def __init__(self, num_classes, num_maxout_neurons = 10):
+    def __init__(self, num_classes, num_maxout_neurons = 100, dropout_rate = 0.5):
         super(CH_MaxoutConv3Layer, self).__init__()
         self.num_classes = num_classes
         self.num_maxout_neurons = num_maxout_neurons
+        self.dropout_rate = dropout_rate
         self._build_model()
 
     def _build_model(self):
@@ -86,6 +87,8 @@ class CH_MaxoutConv3Layer(Model):
         self.dense_layer = Dense(64)
         self.dense_1 = Dense(self.num_maxout_neurons * self.num_classes)
         self.dense_2 = Dense(self.num_maxout_neurons * self.num_classes)
+        self.dropout_1 = Dropout(self.dropout_rate)
+        self.dropout_2 = Dropout(self.dropout_rate)
         self.maxout_1 = Maxout(num_units=self.num_classes, axis=-1)
         self.maxout_2 = Maxout(num_units=self.num_classes, axis=-1)
 
@@ -94,9 +97,11 @@ class CH_MaxoutConv3Layer(Model):
         x = self.dense_layer(x)
         
         x_1 = self.dense_1(x)
+        x_1 = self.dropout_1(x_1)#, training=training)
         x_1 = self.maxout_1(x_1)
 
         x_2 = self.dense_2(x)
+        x_2 = self.dropout_1(x_2)#, training=training)
         x_2 = self.maxout_2(x_2)
 
         logits = x_1 - x_2
@@ -114,10 +119,11 @@ class CH_MaxoutConv3Layer(Model):
         return self
 
 class CH_MaxOut_ResNet50(Model):
-    def __init__(self, num_classes, num_maxout_neurons=10, input_shape = (32, 32, 3)):
+    def __init__(self, num_classes, num_maxout_neurons=100, input_shape = (32, 32, 3), dropout_rate = 0.5):
         super(CH_MaxOut_ResNet50, self).__init__()
         self.num_classes = num_classes
         self.num_maxout_neurons = num_maxout_neurons
+        self.dropout_rate = dropout_rate
 
         # Initialize ResNet50 base model
         self.resnet50_base = ResNet50(weights=None, include_top=False, input_shape=input_shape)
@@ -127,6 +133,8 @@ class CH_MaxOut_ResNet50(Model):
         self.dense_layer = Dense(64, activation='relu')
         self.dense_1 = Dense(self.num_maxout_neurons * self.num_classes)
         self.dense_2 = Dense(self.num_maxout_neurons * self.num_classes)
+        self.dropout_1 = Dropout(self.dropout_rate)
+        self.dropout_2 = Dropout(self.dropout_rate)
         self.maxout_1 = Maxout(num_units=self.num_classes, axis=-1)
         self.maxout_2 = Maxout(num_units=self.num_classes, axis=-1)
 
@@ -134,10 +142,13 @@ class CH_MaxOut_ResNet50(Model):
         x = self.resnet50_base(inputs, training=training)
         x = self.global_avg_pooling(x)
         x = self.dense_layer(x)
+
         x_1 = self.dense_1(x)
+        x_1 = self.dropout_1(x_1)#, training=training)
         x_1 = self.maxout_1(x_1)
 
         x_2 = self.dense_2(x)
+        x_2 = self.dropout_1(x_2)#, training=training)
         x_2 = self.maxout_2(x_2)
 
         logits = x_1 - x_2
