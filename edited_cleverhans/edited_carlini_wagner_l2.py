@@ -92,6 +92,7 @@ class CarliniWagnerL2(object):
         self.confidence = confidence
         self.initial_const = initial_const
 
+
         # the optimizer
         self.optimizer = tf.keras.optimizers.Adam(self.learning_rate)
 
@@ -163,6 +164,12 @@ class CarliniWagnerL2(object):
         modifier = tf.Variable(tf.zeros(shape, dtype=x.dtype), trainable=True)
 
         for outer_step in range(self.binary_search_steps):
+            ######## BIG EDITS HERE
+            if outer_step != 0:
+              self.learning_rate = self.learning_rate*0.8
+              
+              self.optimizer.learning_rate = self.learning_rate
+            ########
             # at each iteration reset variable state
             modifier.assign(tf.zeros(shape, dtype=x.dtype))
             for var in self.optimizer.variables():
@@ -316,7 +323,7 @@ def loss_fn(
     clip_max=1
 ):
     other = clip_tanh(x, clip_min=clip_min, clip_max=clip_max)
-    l2_dist = l2(x_new, other)
+    l2_dist = l2(x_new, other) 
 
     real = tf.reduce_sum(y_true * y_pred, 1)
     other = tf.reduce_max((1.0 - y_true) * y_pred - y_true * 10_000, 1)
@@ -327,11 +334,11 @@ def loss_fn(
     else:
         # if untargeted, optimize for making this class least likely.
         loss_1 = tf.maximum(0.0, real - other + confidence)
-
     # sum up losses
     loss_2 = tf.reduce_sum(l2_dist)
-    loss_1 = tf.reduce_sum(const * loss_1)
-    loss = loss_1 + loss_2 
+    #loss_1 = tf.reduce_sum(const * tf.reshape(loss_1, [-1, 1, 1, 1]))
+    loss_1 = tf.reduce_sum(loss_1*const) #switched order...
+    loss = loss_1 + loss_2
     return loss, l2_dist
 
 

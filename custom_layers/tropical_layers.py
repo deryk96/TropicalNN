@@ -16,8 +16,8 @@ Functions:
 - attackTestSetBatch : Attack a whole set of data batch-by-batch given loss object, model, data, and type of attack.
 '''
 
-from tensorflow import reshape, expand_dims, reduce_max ,reduce_min, float32, transpose, shape, ones, bool, exp, boolean_mask, zeros, concat
-from tensorflow.math import top_k, reduce_sum, exp, logical_not, maximum, minimum
+from tensorflow import reshape, expand_dims, reduce_max ,reduce_min, float32, transpose, shape, ones, bool, exp, boolean_mask, zeros, concat, add, fill, constant
+from tensorflow.math import top_k, reduce_sum, exp, logical_not, maximum, minimum, scalar_mul
 from tensorflow.keras.layers import Layer
 from tensorflow.keras.backend import repeat_elements
 from tensorflow.keras import initializers, regularizers
@@ -55,7 +55,7 @@ class ChangeSignLayer(Layer):
         output : tensorflow tensor object
             Output tensor with signs changed.
         '''
-        return inputs * -1  # Change the sign of the input tensor by multiplying with -1
+        return add(constant(50.0), scalar_mul(-1.0, inputs))# Change the sign of the input tensor by multiplying with -1
     
 
 class SoftminLayer(Layer):
