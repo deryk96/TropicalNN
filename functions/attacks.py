@@ -38,7 +38,7 @@ def l1_projected_gradient_descent(model, x, y, steps, epsilon, eps_iter, loss_ob
         x_adv = convert_to_tensor(x_adv)
         with GradientTape() as tape:
             tape.watch(x_adv)
-            logits = model(x_adv)
+            logits = model(x_adv, training=False)
             loss = loss_object(y, logits)
         gradients = tape.gradient(loss, x_adv) # Compute gradients
         _, h, w, ch = gradients.shape
@@ -97,7 +97,7 @@ def l2_projected_gradient_descent(model, x, y, steps, epsilon, eps_iter, loss_ob
     for _ in range(steps):
         with GradientTape() as tape:
             tape.watch(x_adv)
-            logits = model(x_adv)
+            logits = model(x_adv, training=False)
             loss = loss_object(y, logits)
 
         # Compute gradients
@@ -146,7 +146,7 @@ def fgsm_attack(model, input_data, target_label, loss_object, epsilson = 8/255):
     # - calculate gradient image given model - 
     with GradientTape() as tape: # Record operations for automatic differentiation.
         tape.watch(input_data) # Ensures that tensor is being traced by this tape.
-        prediction = model(input_data) # predicts class of input data using model
+        prediction = model(input_data, training=False) # predicts class of input data using model
         loss = loss_object(target_label, prediction) # calculates loss based on loss object, true label, and predicted label
     gradient = tape.gradient(loss, input_data) # Computes the gradient using operations recorded in context of this tape.
 
@@ -189,7 +189,7 @@ def pgd_attack(model, input_image, target_label, loss_object, epsilon = 8/255, n
     for _ in range(num_steps): # loop num_steps times
         with GradientTape() as tape: # Record operations for automatic differentiation.
             tape.watch(perturbed_image) # Ensures that tensor is being traced by this tape.
-            prediction = model(perturbed_image) # predicts class of input data using model
+            prediction = model(perturbed_image, training=False) # predicts class of input data using model
             loss = loss_object(target_label, prediction) # calculates loss based on loss object, true label, and predicted label
         gradient = tape.gradient(loss, perturbed_image) # Computes the gradient using operations recorded in context of this tape.
         signed_grad = sign(gradient) # take sign of gradients: will be either a -1, 0, or 1
@@ -301,96 +301,11 @@ def pgd_attack_batch(model,
     for _ in range(num_steps): # loop num_steps times
         with GradientTape() as tape: # Record operations for automatic differentiation.
             tape.watch(perturbed_images) # Ensures that tensor is being traced by this tape.
-            predictions = model(perturbed_images) # predicts classes of input data using model
+            predictions = model(perturbed_images, training=False) # predicts classes of input data using model
             loss = loss_object(convert_to_tensor(target_labels), predictions) # calculates losses based on loss object, true label, and predicted label
         gradients = tape.gradient(loss, perturbed_images) # Computes the gradient using operations recorded in context of this tape.
         signed_gradients = sign(gradients) # take sign of gradients: will be either a -1, 0, or 1
         perturbed_images = perturbed_images + step_size * signed_gradients # add a step_size step using signed gradient and add to images
-        perturbed_images = clip_by_value(perturbed_images, input_images - epsilon, input_images + epsilon) # Clip/project pixel values so they are no more than epsilon different from original value
-        perturbed_images = clip_by_value(perturbed_images, -0.5, 0.5) # Clip/project pixel values are in [-0.5, 0.5] range
-    return perturbed_images
-
-
-def tramer_pgd_attack_batch(model, 
-                     input_images, 
-                     target_labels, 
-                     loss_object, 
-                     epsilon=8/255, 
-                     num_steps=5, 
-                     step_size=0.01, 
-                     already_attacked_input_images = None,
-                     random_start = True):
-    '''
-    This function implements the Projected Gradient Descent Method in batches to improve computation time. The method perturbates input images based 
-    on a given model and true data label. The method takes multiple (num_steps) of FGSM, however it differes in that each step has a specified step size 
-    (step_size). After each step, the perturbation is projected back inside the epsilon ball and/or projected back inside the given range of the pixel 
-    data (in our case [-0.5, 0.5]).
-
-    Parameters
-    ----------
-    model : tensorflow model object
-        trained tensorflow model
-    input_images : numpy array
-        set of numpy arrays of input data to attack
-    target_label : numpy array
-        set of numpy arrays of the target label for the given input_images
-    loss_object : tensorflow loss object
-        loss object from tensorflow such as binary or categorical cross entropy 
-    epsilson : float
-        our "adversarial budget", i.e. how far we can deviate from the original data
-    num_steps : int
-        the number of gradient steps we take to maximize the image's loss relative to the input model
-    step_size : float
-        the step size taken at each step
-
-    Returns
-    -------
-    perturbed_images : tensorflow tensor object
-        A perturbated version of the input image
-    '''
-    if already_attacked_input_images is not None:
-        perturbed_images = identity(already_attacked_input_images)  # Create a copy of the input images
-    else:
-        perturbed_images = identity(input_images)  # Create a copy of the input images
-
-    if random_start:
-        # Generating random perturbation
-        random_perturbation = random.uniform(shape=input_images.shape, minval=-epsilon, maxval=epsilon)
-        perturbed_images = perturbed_images + random_perturbation  # Add random perturbation to input images
-    
-    for _ in range(num_steps): # loop num_steps times
-        with GradientTape() as tape: # Record operations for automatic differentiation.
-            tape.watch(perturbed_images) # Ensures that tensor is being traced by this tape.
-            predictions = model(perturbed_images) # predicts classes of input data using model
-            loss = loss_object(convert_to_tensor(target_labels), predictions) # calculates losses based on loss object, true label, and predicted label
-        gradients = tape.gradient(loss, perturbed_images) # Computes the gradient using operations recorded in context of this tape.
-        abs_grad = math.abs(gradients) #from Tramer
-        signed_gradients = sign(gradients) # take sign of gradients: will be either a -1, 0, or 1
-        max_abs_grad = np.percentile(abs_grad, 99, axis=(1, 2, 3), keepdims=True)  #from Tramer
-        tied_for_max = (abs_grad >= max_abs_grad).astype(np.float32) #from Tramer
-        num_ties = np.sum(tied_for_max, (1, 2, 3), keepdims=True) #from Tramer
-        optimal_perturbation = signed_gradients * tied_for_max / num_ties #from Tramer
-        
-        l1 = np.sum(np.abs(new_delta), axis=(1, 2, 3))
-        to_project = l1 > epsilon
-        if np.any(to_project):
-            n = np.sum(to_project)
-            d = new_delta[to_project].reshape(n, -1)  # n * N (N=h*w*ch)
-            abs_d = np.abs(d)  # n * N
-            mu = -np.sort(-abs_d, axis=-1)  # n * N
-            cumsums = mu.cumsum(axis=-1)  # n * N
-            eps_d = eps_w[to_project]
-            js = 1.0 / np.arange(1, h * w * ch + 1)
-            temp = mu - js * (cumsums - np.expand_dims(eps_d, -1))
-            rho = np.argmin(temp > 0, axis=-1)
-            theta = 1.0 / (1 + rho) * (cumsums[range(n), rho] - eps_d)
-            sgn = np.sign(d)
-            d = sgn * np.maximum(abs_d - np.expand_dims(theta, -1), 0)
-            new_delta[to_project] = d.reshape(-1, h, w, ch)
-
-        new_delta = np.clip(new_delta, x_min - (x_adv - old_delta), x_max - (x_adv - old_delta))
-
-        perturbed_images = perturbed_images + step_size * optimal_perturbation # add a step_size step using signed gradient and add to images
         perturbed_images = clip_by_value(perturbed_images, input_images - epsilon, input_images + epsilon) # Clip/project pixel values so they are no more than epsilon different from original value
         perturbed_images = clip_by_value(perturbed_images, -0.5, 0.5) # Clip/project pixel values are in [-0.5, 0.5] range
     return perturbed_images

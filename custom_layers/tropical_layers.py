@@ -205,6 +205,49 @@ class TropRegIncreaseDistance(regularizers.Regularizer):
         return self.lam * exp(-reduce_min(flat_vector))  # Apply exponential and scaling to obtain regularization term
 
 
+class TropRegDecreaseDistance(regularizers.Regularizer):
+    '''
+    Custom TensorFlow regularizer implementing Tropical regularization
+    to increase distances between weights in a layer. Penalizes weights 
+    that are close to one another. Serves to "spread" the weights out in 
+    an attempt to create a set of points that can more robustly define 
+    the decision boundaries of input data. 
+    '''
+
+    def __init__(self, lam=1.0):
+        '''
+        Initializes the TropRegIncreaseDistance regularizer.
+
+        Parameters
+        ----------
+        lam : float, optional
+            Regularization parameter (default is 1.0).
+        '''
+        self.lam = lam
+
+    def __call__(self, weight_matrix):
+        '''
+        Calculates the Tropical regularization term to increase distances between weights.
+
+        Parameters
+        ----------
+        weight_matrix : tensorflow tensor object
+            Weight matrix of a layer.
+
+        Returns
+        -------
+        regularization_term : float
+            Tropical regularization term to increase distances between weights.
+        '''
+        reshaped_weights = expand_dims(weight_matrix, 1)  # Reshape weights to have an additional dimension
+        result_addition = reshaped_weights + transpose(reshaped_weights, perm=[1, 0, 2])  # Add weight matrices and their transposes
+        tropical_distances = reduce_max(result_addition, axis=2) - reduce_min(result_addition, axis=2)  # Calculate tropical distances
+        n = shape(tropical_distances)[0]  # Get the shape of tropical distances
+        mask = band_part(ones((n, n), dtype=bool), 0, -1)  # Create a mask to exclude the main diagonal
+        flat_vector = boolean_mask(tropical_distances, logical_not(mask))  # Extract values not in the main diagonal
+        return self.lam * reduce_max(flat_vector)  # Take max and multiple by lambda to obtain regularization term
+
+
 class TropEmbedTop2(Layer):
     '''
     Custom TensorFlow layer implementing Tropical Embedding for top 2 values.

@@ -100,6 +100,16 @@ def ld_cifar10(batch_size = 128):
 
     return EasyDict(train=cifar10_train, test=cifar10_test), info
 
+def ld_cifar100(batch_size = 128):
+    """Load CIFAR-10 training and test data."""
+    dataset, info = tfds.load("cifar100", with_info=True, as_supervised=True)
+
+    cifar100_train, cifar100_test = dataset["train"], dataset["test"]
+    cifar100_train = cifar100_train.map(convert_types).shuffle(10000).batch(batch_size)
+    cifar100_test = cifar100_test.map(convert_types).batch(batch_size)
+
+    return EasyDict(train=cifar100_train, test=cifar100_test), info
+
 
 def shuffle_data(x_train, x_test, y_train, y_test):
     '''
