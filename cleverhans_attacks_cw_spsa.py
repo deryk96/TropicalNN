@@ -9,6 +9,7 @@ from absl import app, flags
 
 from functions.utils import load_attack_settings, l2
 from edited_cleverhans.edited_carlini_wagner_l2 import carlini_wagner_l2
+#from cleverhans.carlini_wagner_l2 import carlini_wagner_l2
 from edited_cleverhans.edited_spsa import spsa
 
 FLAGS = flags.FLAGS
@@ -62,6 +63,7 @@ def main(_):
         l2_x_cw_avgs = []
         current_batch_size = 0
         for x, y in test_data_subset: #data.test:
+            time_0 = time.time()
             input_elements = 1
             for i in range(1, len(x.shape)):
                 input_elements *= x.shape[i]
@@ -69,7 +71,8 @@ def main(_):
             # -- clean --
             y_pred = model(x, training=False)
             test_acc_clean(y, y_pred)
-            print("clean done", time.time())
+            time_1 = time.time()
+            print(f"\nclean done{time_1 - time_0} sec")
 
             # -- carlini wagner --
             cw_args = {
@@ -114,16 +117,18 @@ def main(_):
             non_zero_mask = tf.not_equal(l2_x_cw, 0.0)
             non_zero_values = tf.boolean_mask(l2_x_cw, non_zero_mask)
             
+            l2_x_cw_avgs.append(tf.reduce_sum(non_zero_values).numpy().item())
             # Check if non_zero_values is empty
-            if tf.size(non_zero_values) == 0:
+            #if tf.size(non_zero_values) == 0:
                 # Append 0 when there are no non-zero values
-                l2_x_cw_avgs.append(0.0)
-            else:
+                #l2_x_cw_avgs.append(0.0)
+            #else:
                 # Otherwise, calculate the mean and append it
-                l2_x_cw_avgs.append(tf.reduce_mean(non_zero_values).numpy().item())
+                #l2_x_cw_avgs.append(tf.reduce_sum(non_zero_values).numpy().item())
             y_pred_cw = model(x_cw, training=False)
             test_acc_cw(y, y_pred_cw)
-            print("cw done", time.time())
+            time_2 = time.time()
+            print(f"\ncw done {time_2 - time_1} sec")
             
 
             # -- spsa --
@@ -150,7 +155,8 @@ def main(_):
             #x_spsa = tf.concat(x_spsa_list, axis=0) # uncomment if you want to view/store the spsa images for some reason.
             y_pred_spsa = tf.concat(y_pred_spsa_list, axis=0)
             test_acc_spsa(y, y_pred_spsa)
-            print("spsa done", time.time())
+            time_3 = time.time()
+            print(f"\nspsa done {time_3 - time_2} sec")
 
             current_batch_size += x.shape[0]
             progress_bar_test.add(x.shape[0], values = [("clean", test_acc_clean.result()),
@@ -170,7 +176,7 @@ def main(_):
         if len(non_zero_l2_x_cw_avg) == 0:
             l2_x_cw_avg = 0.0
         else:
-            l2_x_cw_avg = sum(non_zero_l2_x_cw_avg)/len(non_zero_l2_x_cw_avg)
+            l2_x_cw_avg = sum(non_zero_l2_x_cw_avg) / ((1 - test_acc_cw_value) * batches_per_chunk * batch_size) #len(non_zero_l2_x_cw_avg)
 
         # Prepare the data to be written to CSV
         accuracy_data = [test_acc_clean_value, 

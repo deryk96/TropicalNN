@@ -31,7 +31,7 @@ class CarliniWagnerL2(object):
         abort_early=True,
         confidence=0.0,
         initial_const=1e-2,
-        learning_rate=5e-3
+        learning_rate=5e-3,
     ):
         """
         This attack was originally proposed by Carlini and Wagner. It is an
@@ -92,7 +92,6 @@ class CarliniWagnerL2(object):
         self.confidence = confidence
         self.initial_const = initial_const
 
-
         # the optimizer
         self.optimizer = tf.keras.optimizers.Adam(self.learning_rate)
 
@@ -125,11 +124,32 @@ class CarliniWagnerL2(object):
                     f"The input is greater than the maximum value of {self.clip_max}!"
                 )
 
-        y, _ = get_or_guess_labels(self.model_fn, x, y=self.y, targeted=self.targeted)
-
         # cast to tensor if provided as numpy array
         original_x = tf.cast(x, tf.float32)
         shape = original_x.shape
+
+        #y, _ = get_or_guess_labels(
+        #    self.model_fn, original_x, y=self.y, targeted=self.targeted
+        #)
+        preds = self.model_fn(original_x, training = False)
+        nb_classes = preds.shape[-1]
+
+        # labels set by the user
+        if self.y is not None:
+            # inefficient when y is a tensor, but this function only get called once
+            y = np.asarray(y)
+
+            if len(y.shape) == 1:
+                # the user provided categorical encoding
+                y = tf.one_hot(y, nb_classes)
+
+            y = tf.cast(y, original_x.dtype)
+        else:
+            # must be an untargeted attack
+            y = tf.cast(
+                tf.equal(tf.reduce_max(preds, axis=1, keepdims=True), preds), original_x.dtype
+            )
+
 
         if not y.shape.as_list()[0] == original_x.shape.as_list()[0]:
             raise CarliniWagnerL2Exception("x and y do not have the same shape!")
@@ -150,6 +170,8 @@ class CarliniWagnerL2(object):
         upper_bound = tf.ones(shape[:1]) * 1e10
 
         const = tf.ones(shape[0]) * self.initial_const
+        #const = tf.ones(shape) * self.initial_const 
+
 
         # placeholder variables for best values
         best_l2 = tf.fill(shape[:1], 1e10)
@@ -164,12 +186,6 @@ class CarliniWagnerL2(object):
         modifier = tf.Variable(tf.zeros(shape, dtype=x.dtype), trainable=True)
 
         for outer_step in range(self.binary_search_steps):
-            ######## BIG EDITS HERE
-            if outer_step != 0:
-              self.learning_rate = self.learning_rate*0.8
-              
-              self.optimizer.learning_rate = self.learning_rate
-            ########
             # at each iteration reset variable state
             modifier.assign(tf.zeros(shape, dtype=x.dtype))
             for var in self.optimizer.variables():
@@ -289,7 +305,7 @@ class CarliniWagnerL2(object):
         with tf.GradientTape() as tape:
             adv_image = modifier + x
             x_new = clip_tanh(adv_image, clip_min=self.clip_min, clip_max=self.clip_max)
-            preds = self.model_fn(x_new) 
+            preds = self.model_fn(x_new, training=False)
             loss, l2_dist = loss_fn(
                 x=x,
                 x_new=x_new,
@@ -299,7 +315,7 @@ class CarliniWagnerL2(object):
                 const=const,
                 targeted=self.targeted,
                 clip_min=self.clip_min,
-                clip_max=self.clip_max
+                clip_max=self.clip_max,
             )
 
         grads = tape.gradient(loss, adv_image)
@@ -320,10 +336,10 @@ def loss_fn(
     const=0,
     targeted=False,
     clip_min=0,
-    clip_max=1
+    clip_max=1,
 ):
     other = clip_tanh(x, clip_min=clip_min, clip_max=clip_max)
-    l2_dist = l2(x_new, other) 
+    l2_dist = l2(x_new, other)
 
     real = tf.reduce_sum(y_true * y_pred, 1)
     other = tf.reduce_max((1.0 - y_true) * y_pred - y_true * 10_000, 1)
@@ -334,10 +350,10 @@ def loss_fn(
     else:
         # if untargeted, optimize for making this class least likely.
         loss_1 = tf.maximum(0.0, real - other + confidence)
+
     # sum up losses
     loss_2 = tf.reduce_sum(l2_dist)
-    #loss_1 = tf.reduce_sum(const * tf.reshape(loss_1, [-1, 1, 1, 1]))
-    loss_1 = tf.reduce_sum(loss_1*const) #switched order...
+    loss_1 = tf.reduce_sum(loss_1 * const)# switched order...
     loss = loss_1 + loss_2
     return loss, l2_dist
 

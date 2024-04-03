@@ -58,7 +58,7 @@ def spsa(
         """
         Margin logit loss, with correct sign for targeted vs untargeted loss.
         """
-        logits = model_fn(x)
+        logits = model_fn(x, training=False)
         loss_multiplier = 1 if targeted else -1
         return loss_multiplier * margin_logit_loss(
             logits, label, nb_classes=logits.get_shape()[-1]

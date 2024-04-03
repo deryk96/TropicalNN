@@ -114,11 +114,11 @@ def find_directories_with_keyphrase(root_dir, keyphrase):
                 result[dirname] = os.path.join(dirpath, dirname)
     return result
 
-def load_attack_settings(dataset_name, batch_size):
+def load_attack_settings(dataset_name, batch_size, dir_path):
     _, eps, _, data, info, _, _ = load_data(dataset_name, batch_size)
 
-    model_paths = find_directories_with_keyphrase("/home/kurt.pasque/TropicalNN/master_models", dataset_name)
-
+    model_paths = find_directories_with_keyphrase(dir_path, dataset_name)
+    #"/home/kurt.pasque/TropicalNN/master_models"
     '''
     if dataset_name == "mnist":
         

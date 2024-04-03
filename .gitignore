@@ -7,3 +7,6 @@ __pycache__/
 images_figures/
 slides/
 *.sh
+imagnetPreProcessing/
+*cw_experiment.py
+master_models

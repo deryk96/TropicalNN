@@ -273,7 +273,7 @@ class ResNet50Model(CustomModelClass):
     def _build_base(self):
         self.base_layers = Sequential([
             ResNet50(weights=None, include_top=False, input_shape=self._input_shape),
-            GlobalAveragePooling2D(),
+        GlobalAveragePooling2D(),
         ])
 
     def call(self, inputs, training=True):
