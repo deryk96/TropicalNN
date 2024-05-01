@@ -93,7 +93,7 @@ class CarliniWagnerL2(object):
         self.initial_const = initial_const
 
         # the optimizer
-        self.optimizer = tf.keras.optimizers.Adam(self.learning_rate)
+        self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.learning_rate)
 
         super(CarliniWagnerL2, self).__init__()
 
@@ -112,6 +112,7 @@ class CarliniWagnerL2(object):
         return adv_ex
 
     def _attack(self, x):
+        
         if self.clip_min is not None:
             if not np.all(tf.math.greater_equal(x, self.clip_min)):
                 raise CarliniWagnerL2Exception(
@@ -128,9 +129,9 @@ class CarliniWagnerL2(object):
         original_x = tf.cast(x, tf.float32)
         shape = original_x.shape
 
-        #y, _ = get_or_guess_labels(
-        #    self.model_fn, original_x, y=self.y, targeted=self.targeted
-        #)
+        y, _ = get_or_guess_labels(
+            self.model_fn, original_x, y=self.y, targeted=self.targeted
+        )
         preds = self.model_fn(original_x, training = False)
         nb_classes = preds.shape[-1]
 
@@ -183,12 +184,14 @@ class CarliniWagnerL2(object):
         compare_fn = tf.equal if self.targeted else tf.not_equal
 
         # the perturbation
-        modifier = tf.Variable(tf.zeros(shape, dtype=x.dtype), trainable=True)
+        modifier = tf.Variable(initial_value=tf.zeros(shape, dtype=x.dtype), trainable=True)
 
         for outer_step in range(self.binary_search_steps):
             # at each iteration reset variable state
             modifier.assign(tf.zeros(shape, dtype=x.dtype))
-            for var in self.optimizer.variables():
+            self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.learning_rate)
+            self.optimizer.build([modifier])
+            for var in self.optimizer._variables[:]: #removed parantheses
                 var.assign(tf.zeros(var.shape, dtype=var.dtype))
 
             # variables to keep track in the inner loop
@@ -206,6 +209,7 @@ class CarliniWagnerL2(object):
             # early stopping criteria
             prev = None
 
+            lab = tf.argmax(y, axis=1)  #moved outside loop \/\/\/
             for iteration in range(self.max_iterations):
                 x_new, loss, preds, l2_dist = self.attack_step(x, y, modifier, const)
 
@@ -217,9 +221,7 @@ class CarliniWagnerL2(object):
                     if prev is not None and loss > prev * 0.9999:
                         break
 
-                    prev = loss
-
-                lab = tf.argmax(y, axis=1)
+                    prev = loss               
 
                 pred_with_conf = (
                     preds - self.confidence
@@ -295,8 +297,10 @@ class CarliniWagnerL2(object):
 
     def attack_step(self, x, y, modifier, const):
         x_new, grads, loss, preds, l2_dist = self.gradient(x, y, modifier, const)
-
-        self.optimizer.apply_gradients([(grads, modifier)])
+        
+        #elf.optimizer.apply_gradients(zip([grads], [modifier])) 
+        self.optimizer.update_step(grads, modifier, self.learning_rate) #updated here!
+        #print(tf.math.reduce_mean(modifier)) #check to see if modifier updates.
         return x_new, loss, preds, l2_dist
 
     @tf.function
@@ -353,7 +357,7 @@ def loss_fn(
 
     # sum up losses
     loss_2 = tf.reduce_sum(l2_dist)
-    loss_1 = tf.reduce_sum(loss_1 * const)# switched order...
+    loss_1 = tf.reduce_sum(loss_1*const)# switched order...
     loss = loss_1 + loss_2
     return loss, l2_dist
 

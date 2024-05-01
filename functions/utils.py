@@ -30,6 +30,7 @@ def plot_images_in_grid(list_of_xs, row_labels, col_labels, save_path, input_ele
     plt.savefig(save_path, bbox_inches='tight')
     plt.close()
 
+
 def load_data(dataset_name, batch_size):
     # -- load data and set epsilon --
     if dataset_name == "mnist":
@@ -63,7 +64,39 @@ def load_data(dataset_name, batch_size):
     else:
         raise ValueError("Invalid dataset name provided. Should be either mnist, svhn, cifar10, cifar100, or imagenet")
     return dataset_category, eps, input_elements, data, info, input_shape, num_classes
-    
+
+def model_choice(dataset_name, base_model, top):
+    if dataset_name == "cifar100":
+        num_classes = 100
+    else:
+        num_classes = 10
+    print(num_classes)
+    if base_model == "LeNet5":
+        return LeNet5(num_classes=num_classes, top=top)
+    elif base_model == "ModifiedLeNet5":
+        return ModifiedLeNet5(num_classes=num_classes, top=top)
+    elif base_model == "MobileNet":
+        return MobileNetModel(num_classes=num_classes, top=top)
+    elif base_model == "ResNet50":
+        return ResNet50Model(num_classes=num_classes, top=top)
+    elif base_model == "VGG16":
+        return VGG16Model(num_classes=num_classes, top=top)
+    elif base_model == "EfficientNetB4":
+        return EfficientNetB4Model(num_classes=num_classes, top=top)
+
+def load_models(config):
+    models = {}
+    for dataset_name, config1 in config.items():
+        for base_model, config2 in config1.items():
+            for top_layer, config3 in config2.items():
+                for adv_train, answer in config3.items():
+                    #print(dataset_name, base_model, top_layer, adv_train)
+                    if answer == 1:
+                        models[f"{dataset_name}_{base_model}_{top_layer}_{adv_train}"] = model_choice(dataset_name, base_model, top_layer)
+    return models
+                                                                                    
+
+
 def load_build_settings(dataset_name, base_model_index, batch_size):
     dataset_category, eps, input_elements, data, info, input_shape, num_classes = load_data(dataset_name, batch_size)
 
@@ -106,76 +139,89 @@ def load_build_settings(dataset_name, base_model_index, batch_size):
             raise ValueError("Invalid base_model_index provided. Should be either 0, 1, or 2")
     return input_elements, eps, data, info, models
 
-def find_directories_with_keyphrase(root_dir, keyphrase):
+def find_directories_with_keyphrase(root_dir, dataset_name):
+    valid_datasets = ["mnist", "svhn", "cifar10", "cifar100"]
+    valid_base_models = ["LeNet5", "ModifiedLeNet5", "MobileNet", "ResNet50", "VGG16", "EfficientNetB4"]
+    valid_top_layers = ["maxout", "relu", "trop"]
+    models_to_attack = {
+                        "mnist" : {"LeNet5" :           {"maxout" : {"yes" : 0, "no" : 0},
+                                                        "relu" :    {"yes" : 0, "no" : 0},
+                                                        "trop" :    {"yes" : 0, "no" : 0}},
+                                    "ModifiedLeNet5" :  {"maxout" : {"yes" : 1, "no" : 0},
+                                                        "relu" :    {"yes" : 0, "no" : 0},
+                                                        "trop" :    {"yes" : 0, "no" : 0}}},
+                        "svhn" :  {"LeNet5" :           {"maxout" : {"yes" : 0, "no" : 0},
+                                                        "relu" :    {"yes" : 0, "no" : 0},
+                                                        "trop" :    {"yes" : 0, "no" : 0}},
+                                    "ModifiedLeNet5" :  {"maxout" : {"yes" : 0, "no" : 0},
+                                                        "relu" :    {"yes" : 0, "no" : 0},
+                                                        "trop" :    {"yes" : 0, "no" : 0}},
+                                    "MobileNet" :       {"maxout" : {"yes" : 0, "no" : 1},
+                                                        "relu" :    {"yes" : 0, "no" : 0},
+                                                        "trop" :    {"yes" : 0, "no" : 0}}},
+                        "cifar10" : {"ResNet50" :       {"trop" :   {"yes" : 0, "no" : 0},
+                                                        "relu" :    {"yes" : 0, "no" : 0},
+                                                        "maxout" :  {"yes" : 0, "no" : 0}},
+                                    "VGG16" :           {"maxout" : {"yes" : 0, "no" : 0},
+                                                        "relu" :    {"yes" : 0, "no" : 0},
+                                                        "trop" :    {"yes" : 0, "no" : 0}},
+                                    "EfficientNetB4" :  {"maxout" : {"yes" : 0, "no" : 0},
+                                                        "relu" :    {"yes" : 0, "no" : 0},
+                                                        "trop" :    {"yes" : 0, "no" : 0}}},
+                        "cifar100" : {"ResNet50" :      {"maxout" : {"yes" : 0, "no" : 0},
+                                                        "relu" :    {"yes" : 0, "no" : 0},
+                                                        "trop" :    {"yes" : 0, "no" : 0}},
+                                    "VGG16" :           {"maxout" : {"yes" : 0, "no" : 0},
+                                                        "relu" :    {"yes" : 0, "no" : 0},
+                                                        "trop" :    {"yes" : 0, "no" : 0}},
+                                    "EfficientNetB4" :  {"maxout" : {"yes" : 0, "no" : 0},
+                                                        "relu" :    {"yes" : 0, "no" : 0},
+                                                        "trop" :    {"yes" : 0, "no" : 0}}},
+                    }
+    #{dataset_name}_{base_model}_{top_layer}_{adv_train}
     result = {}
-    for dirpath, dirnames, filenames in os.walk(root_dir):
+    for dir_path, dirnames, filenames in os.walk(root_dir):
         for dirname in dirnames:
-            if keyphrase in dirname:
-                result[dirname] = os.path.join(dirpath, dirname)
+            list_dirname = dirname.split('_')
+            if (not list_dirname[0] in valid_datasets) or (not list_dirname[1] in valid_base_models) or (not list_dirname[2] in valid_top_layers):
+                continue
+            #print(list_dirname)
+            if (dataset_name in dirname) and (models_to_attack[list_dirname[0]][list_dirname[1]][list_dirname[2]][list_dirname[3]] == 1):
+                result[dirname] = os.path.join(dir_path, dirname)
+        for filename in filenames:
+            if not ".keras" in filename:
+                continue
+            list_dirname = filename.split('_')
+            if (not list_dirname[0] in valid_datasets) or (not list_dirname[1] in valid_base_models) or (not list_dirname[2] in valid_top_layers):
+                continue
+            #print(list_dirname)
+            if (dataset_name in filename) and (models_to_attack[list_dirname[0]][list_dirname[1]][list_dirname[2]][list_dirname[3]] == 1):
+                result[filename] = os.path.join(dir_path, filename)
     return result
 
-def load_attack_settings(dataset_name, batch_size, dir_path):
+
+def load_attack_settings(dataset_name, batch_size, root_dir):
     _, eps, _, data, info, _, _ = load_data(dataset_name, batch_size)
 
-    model_paths = find_directories_with_keyphrase(dir_path, dataset_name)
-    #"/home/kurt.pasque/TropicalNN/master_models"
-    '''
-    if dataset_name == "mnist":
-        
-        if adv_train == 'yes':
-            model_paths = {
-                       'mnist_ModifiedLeNet5_trop_yes_27Mar24': 'master_models/mnist_ModifiedLeNet5_trop_yes_27Mar24', #new
-                       'mnist_ModifiedLeNet5_relu_yes_27Mar24':'master_models/mnist_ModifiedLeNet5_relu_yes_27Mar24', #new
-                       'mnist_ModifiedLeNet5_maxout_yes_27Mar24':'master_models/mnist_ModifiedLeNet5_maxout_yes_27Mar24', #new
-                        }
-        else:
-            model_paths = {
-                       'mnist_ModifiedLeNet5_MMR_no':'saved_models/CH_MMRReluConv3Layer_mnist_0.1_100_False', # respectfully not doing again...
-                       'mnist_ModifiedLeNet5_trop_no_27Mar24': 'master_models/mnist_ModifiedLeNet5_trop_no_27Mar24/', #new 
-                       'mnist_ModifiedLeNet5_relu_no_27Mar24':'master_models/mnist_ModifiedLeNet5_relu_no_27Mar24/', #new 
-                       'mnist_ModifiedLeNet5_maxout_no_27Mar24':'master_models/mnist_ModifiedLeNet5_maxout_no_27Mar24/', #new 
-                        }
-    elif dataset_name == "svhn":
-        if adv_train == 'yes':
-            model_paths = {
-                       'CH_TropConv3Layer': 'saved_models/CH_TropConv3Layer_redo_svhn_0.03137254901960784_100_True',
-                       'CH_ReluConv3Layer':'saved_models/CH_ReluConv3Layer_redo_svhn_0.03137254901960784_100_True',
-                       'CH_MaxoutConv3Layer':'saved_models/CH_MaxoutConv3Layer_redo_svhn_0.03137254901960784_100_True',
-                        }
-        else:
-            model_paths = {
-                       'CH_MMRReluConv3Layer': 'saved_models/CH_MMRReluConv3Layer_svhn_0.01568627450980392_100_False', # respectfully not doing again...
-                       #'CH_TropConv3Layer': 'saved_models/CH_TropConv3Layer_svhn_0.01568627450980392_100_False',
-                       #'CH_ReluConv3Layer':'saved_models/CH_ReluConv3Layer_svhn_0.01568627450980392_100_False',
-                       #'CH_MaxoutConv3Layer':'saved_models/CH_MaxoutConv3Layer_svhn_0.01568627450980392_100_False',
-                        }
-    elif dataset_name == "cifar10":
-        if adv_train == 'yes':
-            model_paths = {
-                       'CH_TropConv3Layer': 'saved_models/CH_Trop_ResNet50_redo_cifar_0.03137254901960784_100_True',
-                       'CH_ReluConv3Layer':'saved_models/CH_ReLU_ResNet50_redo_cifar_0.03137254901960784_100_True',
-                       'CH_MaxoutConv3Layer':'saved_models/CH_MaxOut_ResNet50_redo_cifar_0.03137254901960784_100_True',
-                        }
-        else:
-            model_paths = {
-                       'CH_TropConv3Layer': 'saved_models/CH_Trop_ResNet50_cifar_0.01568627450980392_100_False',
-                       'CH_ReluConv3Layer':'saved_models/CH_ReLU_ResNet50_cifar_0.01568627450980392_100_False',
-                       'CH_MaxoutConv3Layer':'saved_models/CH_MaxOut_ResNet50_cifar_0.01568627450980392_100_False',
-                        }
-    elif dataset_name == "cifar100":
-        if adv_train == 'yes':
-            model_paths = {
-                       'CH_TropConv3Layer': 'saved_models/CH_Trop_ResNet50_redo_cifar_0.03137254901960784_100_True',
-                       'CH_ReluConv3Layer':'saved_models/CH_ReLU_ResNet50_redo_cifar_0.03137254901960784_100_True',
-                       'CH_MaxoutConv3Layer':'saved_models/CH_MaxOut_ResNet50_redo_cifar_0.03137254901960784_100_True',
-                        }
-        else:
-            model_paths = {
-                       'CH_TropConv3Layer': 'saved_models/CH_Trop_ResNet50_cifar_0.01568627450980392_100_False',
-                       'CH_ReluConv3Layer':'saved_models/CH_ReLU_ResNet50_cifar_0.01568627450980392_100_False',
-                       'CH_MaxoutConv3Layer':'saved_models/CH_MaxOut_ResNet50_cifar_0.01568627450980392_100_False',
-                        }
-    else:
-        raise ValueError("Invalid dataset name provided. Should be either mnist, svhn, cifar10, cifar100, or imagenet")
-    '''
+    model_paths = find_directories_with_keyphrase(root_dir, dataset_name)
+
     return eps, data, info, model_paths
+
+
+def save_location_attack_results(arg_dataset, name, batch_chunk, total_batch_chunks,attack_type):
+    list_dirname = name.split('_')
+    base_model = list_dirname[1]
+    top_layer = list_dirname[2]
+    adv_train = list_dirname[3]
+    if not os.path.exists('attack_results'):  # Check if directory doesn't exist
+        os.makedirs('attack_results')
+    if not os.path.exists(f'attack_results/{arg_dataset}'):  # Check if directory doesn't exist
+        os.makedirs(f'attack_results/{arg_dataset}')
+    if not os.path.exists(f'attack_results/{arg_dataset}/{base_model}'):  # Check if directory doesn't exist
+        os.makedirs(f'attack_results/{arg_dataset}/{base_model}')
+    if not os.path.exists(f'attack_results/{arg_dataset}/{base_model}/{top_layer}'):  # Check if directory doesn't exist
+        os.makedirs(f'attack_results/{arg_dataset}/{base_model}/{top_layer}')
+    if not os.path.exists(f'attack_results/{arg_dataset}/{base_model}/{top_layer}/{adv_train}'):  # Check if directory doesn't exist
+        os.makedirs(f'attack_results/{arg_dataset}/{base_model}/{top_layer}/{adv_train}')
+        #{dataset_name}_{base_model}_{top_layer}_{adv_train}
+    return f'attack_results/{arg_dataset}/{base_model}/{top_layer}/{adv_train}/{name}_{batch_chunk}_of_{total_batch_chunks}_{attack_type}.csv'

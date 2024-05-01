@@ -5,42 +5,26 @@ import os
 import numpy as np
 import tensorflow as tf
 import time
-from absl import app, flags
+from absl import app
 
-from functions.utils import load_attack_settings, l2
+from functions.utils import load_attack_settings, l2, save_location_attack_results
 from edited_cleverhans.edited_carlini_wagner_l2 import carlini_wagner_l2
 #from cleverhans.carlini_wagner_l2 import carlini_wagner_l2
 from edited_cleverhans.edited_spsa import spsa
 
-FLAGS = flags.FLAGS
-
 def main(_):
-    # argument parsing
-    if len(sys.argv) > 1:
-        batch_chunk = int(sys.argv[1])
-        total_batch_chunks = int(sys.argv[2])
-        batch_size = int(sys.argv[3]) 
-        arg_dataset = sys.argv[4]
-        #adv_train = sys.argv[5]
-        print('argument dataset', arg_dataset, arg_dataset == FLAGS.dataset)
-    else:
-        batch_chunk = 0
-        total_batch_chunks = 1
-        batch_size = 128
-        arg_dataset = 'mnist'
-        #adv_train = 'no'
-        
-    if arg_dataset != FLAGS.dataset:
-        FLAGS.dataset = arg_dataset
-        
+    batch_chunk = 0#int(sys.argv[1])
+    total_batch_chunks = 250#int(sys.argv[2])
+    batch_size = 2#int(sys.argv[3]) 
+    arg_dataset = "mnist"#sys.argv[4]
+    print('argument dataset', arg_dataset)
+
     num_classes = 10
     cw_targeted = False
 
     print("starting run")
     # Load data
-    eps, data, info, model_paths = load_attack_settings(arg_dataset, batch_size)#, adv_train)
-    FLAGS.eps = eps
-    
+    eps, data, info, model_paths = load_attack_settings(arg_dataset, batch_size, "master_models")#, adv_train)
 
     total_test_examples = info.splits['test'].num_examples
     total_batches = math.ceil(total_test_examples / batch_size)
@@ -85,7 +69,7 @@ def main(_):
                         'binary_search_steps' : 10,
                         'confidence' : 0,
                         'initial_const' : 10,
-                        'learning_rate' : 0.1
+                        'learning_rate' : 1.0 #used 0.1 for everything else
                         }
             
             if cw_targeted:
@@ -141,7 +125,7 @@ def main(_):
                 x_spsa_single = spsa(model, 
                                       x=x[i:i+1], 
                                       y=y[i], 
-                                      eps=FLAGS.eps, 
+                                      eps=eps, 
                                       nb_iter=100, 
                                       learning_rate=0.01, 
                                       delta=0.01, 
@@ -186,13 +170,7 @@ def main(_):
                          current_batch_size
                          ]
 
-        # Specify the CSV file name
-        if not os.path.exists('attack_results'):  # Check if directory doesn't exist
-            os.makedirs('attack_results')
-        if not os.path.exists(f'attack_results/{FLAGS.dataset}'):  # Check if directory doesn't exist
-            os.makedirs(f'attack_results/{FLAGS.dataset}')
-        csv_file = f'attack_results/{FLAGS.dataset}/{name}_{batch_chunk}_of_{total_batch_chunks}_cw_spsa.csv'
-
+        csv_file = save_location_attack_results(arg_dataset,name,batch_chunk,total_batch_chunks,"cw_spsa")
         # Write to CSV
         with open(csv_file, mode='w', newline='') as file:
             writer = csv.writer(file)
@@ -209,8 +187,4 @@ def main(_):
 
 if __name__ == "__main__":
     print("##########      Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
-    flags.DEFINE_integer("nb_epochs", 100, "Number of epochs.")
-    flags.DEFINE_float("eps", 0.1, "Total epsilon for FGSM and PGD attacks.")
-    flags.DEFINE_bool("adv_train", False, "Use adversarial training (on PGD adversarial examples).")
-    flags.DEFINE_string("dataset", "mnist", "Specifies dataset used to train the model.")
     app.run(main)

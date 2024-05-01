@@ -91,7 +91,7 @@ def l2_projected_gradient_descent(model, x, y, steps, epsilon, eps_iter, loss_ob
     
     # Initialize adversarial examples with the original input plus random perturbation
     x_adv = x_adv + random_perturbation
-    x_adv = clip_by_value(x_adv, x_min, x_max)  # Assuming the input range is [0, 1]
+    x_adv = clip_by_value(x_adv, x_min, x_max) 
 
 
     for _ in range(steps):
@@ -108,7 +108,7 @@ def l2_projected_gradient_descent(model, x, y, steps, epsilon, eps_iter, loss_ob
 
         # Project back into the epsilon ball and clip to valid image range
         x_adv = x + clip_by_norm(x_adv - x, epsilon, axes=[1, 2, 3])
-        x_adv = clip_by_value(x_adv, x_min, x_max)  # Assuming the input range is [0, 1]
+        x_adv = clip_by_value(x_adv, x_min, x_max)  
 
     return x_adv
 

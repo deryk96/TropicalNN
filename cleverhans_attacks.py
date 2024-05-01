@@ -5,37 +5,24 @@ import os
 import numpy as np
 import tensorflow as tf
 import time
-from absl import app, flags
+from absl import app
 
 from functions.attacks import l1_projected_gradient_descent, l2_projected_gradient_descent
-from functions.utils import  load_attack_settings, l1, l2
+from functions.utils import  load_attack_settings, save_location_attack_results
 
 from cleverhans.tf2.attacks.projected_gradient_descent import projected_gradient_descent
 from cleverhans.tf2.attacks.fast_gradient_method import fast_gradient_method
 
-FLAGS = flags.FLAGS
-
 def main(_):
     # argument parsing
-    if len(sys.argv) > 1:
-        batch_chunk = int(sys.argv[1])
-        total_batch_chunks = int(sys.argv[2])
-        batch_size = int(sys.argv[3]) 
-        arg_dataset = sys.argv[4]
-        #adv_train = sys.argv[5]
-        print('argument dataset', arg_dataset, arg_dataset == FLAGS.dataset)
-    else:
-        batch_chunk = 0
-        total_batch_chunks = 1
-        batch_size = 128
-        arg_dataset = 'mnist'
-        #adv_train = 'no'
-        
-    if arg_dataset != FLAGS.dataset:
-        FLAGS.dataset = arg_dataset
 
-    eps, data, info, model_paths = load_attack_settings(arg_dataset, batch_size)#, adv_train)
-    FLAGS.eps = eps
+    batch_chunk = int(sys.argv[1])
+    total_batch_chunks = int(sys.argv[2])
+    batch_size = int(sys.argv[3]) 
+    arg_dataset = sys.argv[4]
+    print('argument dataset', arg_dataset)
+
+    eps, data, info, model_paths = load_attack_settings(arg_dataset, batch_size, "master_models")#, adv_train)
 
     total_test_examples = info.splits['test'].num_examples
     total_batches = math.ceil(total_test_examples / batch_size)
@@ -65,7 +52,7 @@ def main(_):
             for i in range(1, len(x.shape)):
                 input_elements *= x.shape[i]
                 
-            eps_l2 = math.sqrt((FLAGS.eps**2)*input_elements)
+            eps_l2 = math.sqrt((eps**2)*input_elements)
             eps_l1 = 2 * eps_l2
 
             # -- clean --
@@ -91,7 +78,7 @@ def main(_):
             # -- fast gradient sign method --
             x_fgsm = fast_gradient_method(model_fn = model,
                                                     x = x,
-                                                    eps = FLAGS.eps,
+                                                    eps = eps,
                                                     norm = np.inf,
                                                     loss_fn = None,
                                                     clip_min = -1.0,
@@ -106,7 +93,7 @@ def main(_):
             # -- l_inf || projected gradient descent --
             x_pgd_inf = projected_gradient_descent(model_fn = model,
                                                     x = x,
-                                                    eps = FLAGS.eps,
+                                                    eps = eps,
                                                     eps_iter = 0.01,
                                                     nb_iter = 100,
                                                     norm = np.inf,
@@ -116,7 +103,7 @@ def main(_):
                                                     y = y,
                                                     targeted = False,
                                                     rand_init = True,
-                                                    rand_minmax = FLAGS.eps,
+                                                    rand_minmax = eps,
                                                     sanity_checks=False)
             y_pred_pgd_inf = model(x_pgd_inf, training=False)
             test_acc_pgd_inf(y, y_pred_pgd_inf)
@@ -167,11 +154,7 @@ def main(_):
                          ]
 
         # Specify the CSV file name
-        if not os.path.exists('attack_results'):  # Check if directory doesn't exist
-            os.makedirs('attack_results')
-        if not os.path.exists(f'attack_results/{FLAGS.dataset}'):  # Check if directory doesn't exist
-            os.makedirs(f'attack_results/{FLAGS.dataset}')
-        csv_file = f'attack_results/{FLAGS.dataset}/{name}_{batch_chunk}_of_{total_batch_chunks}_pgds.csv'
+        csv_file = save_location_attack_results(arg_dataset,name,batch_chunk,total_batch_chunks,"pgd")
 
         # Write to CSV
         with open(csv_file, mode='w', newline='') as file:
@@ -190,8 +173,4 @@ def main(_):
 
 if __name__ == "__main__":
     print("##########      Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
-    flags.DEFINE_integer("nb_epochs", 100, "Number of epochs.")
-    flags.DEFINE_float("eps", 0.1, "Total epsilon for FGSM and PGD attacks.")
-    flags.DEFINE_bool("adv_train", False, "Use adversarial training (on PGD adversarial examples).")
-    flags.DEFINE_string("dataset", "mnist", "Specifies dataset used to train the model.")
     app.run(main)

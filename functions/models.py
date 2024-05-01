@@ -23,6 +23,7 @@ from tensorflow.keras import Sequential, Model, initializers
 from tensorflow.keras.layers import Dense, MaxPooling2D, Flatten, Conv2D, Dropout, GlobalAveragePooling2D, Layer, AveragePooling2D, DepthwiseConv2D, ReLU, BatchNormalization
 from tensorflow.keras.applications import ResNet50, VGG16, MobileNet, EfficientNetB4
 from tensorflow.keras.models import Sequential, Model
+from tensorflow.keras.utils import serialize_keras_object, deserialize_keras_object
 
 
 class Maxout(Layer):
@@ -57,12 +58,27 @@ class CustomModelClass(Model):
                  dropout_rate = 0.5,
                  lam = 0,
                  **kwargs):
-        super(CustomModelClass, self).__init__()
+        super(CustomModelClass, self).__init__(**kwargs)
         self.num_classes = num_classes
         self.initializer = initializer
         self.dropout_rate = dropout_rate
         self.num_maxout_neurons = num_maxout_neurons
         self.lam = lam
+        self.top_type = top
+        #if top == "relu":
+            #self._build_relu()
+            #self.top_processor = self.simple_top
+        #elif top == "trop":
+            #self._build_trop()
+            #self.top_processor = self.simple_top
+        #elif top == "maxout":
+            #self._build_maxout()
+            #self.top_processor = self.maxout_top
+        #else:
+            #raise ValueError("Invalid top layer specified")
+        self._select_top_layer(top)  # Initialize layers based on top type
+
+    def _select_top_layer(self, top):
         if top == "relu":
             self._build_relu()
             self.top_processor = self.simple_top
@@ -74,9 +90,9 @@ class CustomModelClass(Model):
             self.top_processor = self.maxout_top
         else:
             raise ValueError("Invalid top layer specified")
-        
+
     def _build_relu(self):
-        self.top = Dense(10)
+        self.top = Dense(self.num_classes)
 
     def _build_trop(self):
         self.top = Sequential([
@@ -105,6 +121,21 @@ class CustomModelClass(Model):
         x_2 = self.maxout_2(x_2)
         return x_1 - x_2
 
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            'num_classes': self.num_classes,
+            'top_type': self.top_type,
+            'initializer': initializers.serialize(self.initializer),
+            'num_maxout_neurons': self.num_maxout_neurons,
+            'dropout_rate': self.dropout_rate,
+            'lam': self.lam
+        })
+        return config
+
+    @classmethod
+    def from_config(cls, config, custom_objects=None):
+        return cls(**config)
 
 class VGG16Model(CustomModelClass):
     def __init__(self, 
@@ -114,18 +145,21 @@ class VGG16Model(CustomModelClass):
                  num_maxout_neurons = 100, 
                  dropout_rate = 0.5,
                  input_shape = (32, 32, 3),
+                 **kwargs,
                  ):
         super(VGG16Model, self).__init__(num_classes = num_classes, 
                                     top = top, 
                                     initializer=initializer, 
                                     num_maxout_neurons = num_maxout_neurons, 
-                                    dropout_rate = dropout_rate)
-        self._input_shape = input_shape
+                                    dropout_rate = dropout_rate,
+                                    **kwargs,
+                                    )
+        self.input_shape = input_shape
         self._build_base()
 
     def _build_base(self):
         self.base_layers = Sequential([
-            VGG16(weights=None, include_top=False, input_shape=self._input_shape),
+            VGG16(weights=None, include_top=False, input_shape=self.input_shape),
             Flatten(),
             Dense(4096, activation="relu", name="fc1"),
             Dense(4096, activation="relu", name="fc2"),
@@ -135,6 +169,16 @@ class VGG16Model(CustomModelClass):
         x = self.base_layers(inputs)
         return self.top_processor(x, training)
     
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            'input_shape': self.input_shape
+        })
+        return config
+
+    @classmethod
+    def from_config(cls, config, custom_objects=None):
+        return cls(**config)
 
 class ModifiedLeNet5(CustomModelClass):
     def __init__(self, 
@@ -142,12 +186,14 @@ class ModifiedLeNet5(CustomModelClass):
                  top,
                  initializer=initializers.RandomNormal(mean=0, stddev=1., seed=0), 
                  num_maxout_neurons = 100, 
-                 dropout_rate = 0.5):
+                 dropout_rate = 0.5,
+                 **kwargs):
         super(ModifiedLeNet5, self).__init__(num_classes = num_classes, 
                                     top = top, 
                                     initializer=initializer, 
                                     num_maxout_neurons = num_maxout_neurons, 
-                                    dropout_rate = dropout_rate)
+                                    dropout_rate = dropout_rate,
+                                    **kwargs)
         self._build_base()
 
     def _build_base(self):
@@ -164,6 +210,14 @@ class ModifiedLeNet5(CustomModelClass):
     def call(self, inputs, training=True):
         x = self.base_layers(inputs)
         return self.top_processor(x, training)
+    
+    def get_config(self):
+        config = super().get_config()
+        return config
+
+    @classmethod
+    def from_config(cls, config, custom_objects=None):
+        return cls(**config)
 
 
 class LeNet5(CustomModelClass):
@@ -172,12 +226,14 @@ class LeNet5(CustomModelClass):
                  top,
                  initializer=initializers.RandomNormal(mean=0, stddev=1., seed=0), 
                  num_maxout_neurons = 100, 
-                 dropout_rate = 0.5):
+                 dropout_rate = 0.5,
+                 **kwargs):
         super(LeNet5, self).__init__(num_classes = num_classes, 
                                     top = top, 
                                     initializer=initializer, 
                                     num_maxout_neurons = num_maxout_neurons, 
-                                    dropout_rate = dropout_rate)
+                                    dropout_rate = dropout_rate,
+                                    **kwargs)
         self._build_base()
 
     def _build_base(self):
@@ -195,6 +251,14 @@ class LeNet5(CustomModelClass):
     def call(self, inputs, training=True):
         x = self.base_layers(inputs)
         return self.top_processor(x, training)
+    
+    def get_config(self):
+        config = super().get_config()
+        return config
+
+    @classmethod
+    def from_config(cls, config, custom_objects=None):
+        return cls(**config)
 
 
 class MobileNetModel(CustomModelClass):
@@ -205,24 +269,37 @@ class MobileNetModel(CustomModelClass):
                  num_maxout_neurons = 100, 
                  dropout_rate = 0.5,
                  input_shape = (32, 32, 3),
+                 **kwargs
                  ):
         super(MobileNetModel, self).__init__(num_classes = num_classes, 
                                     top = top, 
                                     initializer=initializer, 
                                     num_maxout_neurons = num_maxout_neurons, 
-                                    dropout_rate = dropout_rate)
-        self._input_shape = input_shape
+                                    dropout_rate = dropout_rate,
+                                    **kwargs)
+        self.input_shape = input_shape
         self._build_base()
 
     def _build_base(self):
         self.base_layers = Sequential([
-            MobileNet(weights=None, include_top=False, input_shape=self._input_shape),
+            MobileNet(weights=None, include_top=False, input_shape=self.input_shape),
             GlobalAveragePooling2D(),
         ])
 
     def call(self, inputs, training=True):
         x = self.base_layers(inputs)
         return self.top_processor(x, training)
+    
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            'input_shape': self.input_shape
+        })
+        return config
+
+    @classmethod
+    def from_config(cls, config, custom_objects=None):
+        return cls(**config)
 
 
 class EfficientNetB4Model(CustomModelClass):
@@ -233,24 +310,38 @@ class EfficientNetB4Model(CustomModelClass):
                  num_maxout_neurons = 100, 
                  dropout_rate = 0.5,
                  input_shape = (32, 32, 3),
+                 **kwargs,
                  ):
         super(EfficientNetB4Model, self).__init__(num_classes = num_classes, 
                                     top = top, 
                                     initializer=initializer, 
                                     num_maxout_neurons = num_maxout_neurons, 
-                                    dropout_rate = dropout_rate)
-        self._input_shape = input_shape
+                                    dropout_rate = dropout_rate,
+                                    **kwargs,
+                                    )
+        self.input_shape = input_shape
         self._build_base()
 
     def _build_base(self):
         self.base_layers = Sequential([
-            EfficientNetB4(weights=None, include_top=False, input_shape=self._input_shape),
+            EfficientNetB4(weights=None, include_top=False, input_shape=self.input_shape),
             GlobalAveragePooling2D(),
         ])
 
     def call(self, inputs, training=True):
         x = self.base_layers(inputs)
         return self.top_processor(x, training)
+    
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            'input_shape': self.input_shape
+        })
+        return config
+
+    @classmethod
+    def from_config(cls, config, custom_objects=None):
+        return cls(**config)
 
 
 class ResNet50Model(CustomModelClass):
@@ -261,24 +352,38 @@ class ResNet50Model(CustomModelClass):
                  num_maxout_neurons=100,  
                  dropout_rate = 0.5,
                  input_shape = (32, 32, 3),
+                 **kwargs,
                  ):
         super(ResNet50Model, self).__init__(num_classes = num_classes, 
                                     top = top, 
                                     initializer=initializer, 
                                     num_maxout_neurons = num_maxout_neurons, 
-                                    dropout_rate = dropout_rate)
-        self._input_shape = input_shape
+                                    dropout_rate = dropout_rate,
+                                    **kwargs,
+                                    )
+        self.input_shape = input_shape
         self._build_base()
 
     def _build_base(self):
         self.base_layers = Sequential([
-            ResNet50(weights=None, include_top=False, input_shape=self._input_shape),
+            ResNet50(weights=None, include_top=False, input_shape=self.input_shape),
         GlobalAveragePooling2D(),
         ])
 
     def call(self, inputs, training=True):
         x = self.base_layers(inputs)
         return self.top_processor(x, training)   
+    
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            'input_shape': self.input_shape
+        })
+        return config
+
+    @classmethod
+    def from_config(cls, config, custom_objects=None):
+        return cls(**config)
 
 
 class CH_MMRReluConv3Layer(Model):
