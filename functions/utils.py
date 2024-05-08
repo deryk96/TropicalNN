@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 import os
 from functions.load_data import ld_mnist, ld_svhn, ld_cifar10, ld_cifar100
-from functions.models import ResNet50Model, ModifiedLeNet5, LeNet5, VGG16Model, MobileNetModel, EfficientNetB4Model
+from functions.models import ResNet50Model, ModifiedLeNet5, LeNet5, VGG16Model, MobileNetModel, EfficientNetB4Model, AlexNetModel
 
 def l2(x, y):
     return tf.sqrt(tf.reduce_sum(tf.square(x - y), list(range(1, len(x.shape)))))
@@ -65,24 +65,50 @@ def load_data(dataset_name, batch_size):
         raise ValueError("Invalid dataset name provided. Should be either mnist, svhn, cifar10, cifar100, or imagenet")
     return dataset_category, eps, input_elements, data, info, input_shape, num_classes
 
-def model_choice(dataset_name, base_model, top):
+
+def find_model(dataset_name, base_model, top_layer, root_dir = "new_master_models"):
+    valid_datasets = ["mnist", "svhn", "cifar10", "cifar100"]
+    valid_base_models = ["LeNet5", "ModifiedLeNet5", "MobileNet", "ResNet50", "VGG16", "EfficientNetB4"]
+    valid_top_layers = ["maxout", "relu", "trop"]
+    for dir_path, _dirnames_, filenames in os.walk(root_dir):
+        for filename in filenames:
+            if not ".keras" in filename:
+                continue
+            list_dirname = filename.split('_')
+            if (list_dirname[0] == dataset_name) and (list_dirname[1] == base_model) and (list_dirname[2] == top_layer) and (list_dirname[3] == "no"):
+                return os.path.join(dir_path, filename)  
+
+
+def model_choice(dataset_name, base_model, top, adv_train):
     if dataset_name == "cifar100":
         num_classes = 100
     else:
         num_classes = 10
-    print(num_classes)
+
     if base_model == "LeNet5":
-        return LeNet5(num_classes=num_classes, top=top)
+        model = LeNet5(num_classes=num_classes, top=top)
     elif base_model == "ModifiedLeNet5":
-        return ModifiedLeNet5(num_classes=num_classes, top=top)
+        model =  ModifiedLeNet5(num_classes=num_classes, top=top)
     elif base_model == "MobileNet":
-        return MobileNetModel(num_classes=num_classes, top=top)
+        model =  MobileNetModel(num_classes=num_classes, top=top)
     elif base_model == "ResNet50":
-        return ResNet50Model(num_classes=num_classes, top=top)
+        model =  ResNet50Model(num_classes=num_classes, top=top)
     elif base_model == "VGG16":
-        return VGG16Model(num_classes=num_classes, top=top)
+        model =  VGG16Model(num_classes=num_classes, top=top)
     elif base_model == "EfficientNetB4":
-        return EfficientNetB4Model(num_classes=num_classes, top=top)
+        model =  EfficientNetB4Model(num_classes=num_classes, top=top)
+    elif base_model == "AlexNet":
+        model =  AlexNetModel(num_classes=num_classes, top=top)
+
+    if adv_train == "yes":
+        starting_model_path = find_model(dataset_name, base_model, top)
+        starting_model = tf.keras.models.load_model(starting_model_path)
+        new_model = tf.keras.models.clone_model(starting_model)
+        starting_model_weights = starting_model.get_weights()
+        new_model.set_weights(starting_model_weights)
+        return new_model
+    else:
+        return model
 
 def load_models(config):
     models = {}
@@ -90,9 +116,8 @@ def load_models(config):
         for base_model, config2 in config1.items():
             for top_layer, config3 in config2.items():
                 for adv_train, answer in config3.items():
-                    #print(dataset_name, base_model, top_layer, adv_train)
                     if answer == 1:
-                        models[f"{dataset_name}_{base_model}_{top_layer}_{adv_train}"] = model_choice(dataset_name, base_model, top_layer)
+                        models[f"{dataset_name}_{base_model}_{top_layer}_{adv_train}"] = model_choice(dataset_name, base_model, top_layer, adv_train)
     return models
                                                                                     
 
@@ -144,21 +169,23 @@ def find_directories_with_keyphrase(root_dir, dataset_name):
     valid_base_models = ["LeNet5", "ModifiedLeNet5", "MobileNet", "ResNet50", "VGG16", "EfficientNetB4"]
     valid_top_layers = ["maxout", "relu", "trop"]
     models_to_attack = {
-                        "mnist" : {"LeNet5" :           {"maxout" : {"yes" : 0, "no" : 0},
-                                                        "relu" :    {"yes" : 0, "no" : 0},
-                                                        "trop" :    {"yes" : 0, "no" : 0}},
+                        "mnist" : {"LeNet5" :           {"maxout" : {"yes" : 0, "no" : 1},
+                                                        "relu" :    {"yes" : 0, "no" : 1},
+                                                        "trop" :    {"yes" : 0, "no" : 1}},
+                                    "ModifiedLeNet5" :  {"maxout" : {"yes" : 0, "no" : 1},
+                                                        "relu" :    {"yes" : 0, "no" : 1},
+                                                        "trop" :    {"yes" : 0, "no" : 1}}},
+                                                        
+                        "svhn" :  {"LeNet5" :           {"maxout" : {"yes" : 1, "no" : 0},
+                                                        "relu" :    {"yes" : 1, "no" : 0},
+                                                        "trop" :    {"yes" : 1, "no" : 0}},
                                     "ModifiedLeNet5" :  {"maxout" : {"yes" : 1, "no" : 0},
-                                                        "relu" :    {"yes" : 0, "no" : 0},
-                                                        "trop" :    {"yes" : 0, "no" : 0}}},
-                        "svhn" :  {"LeNet5" :           {"maxout" : {"yes" : 0, "no" : 0},
-                                                        "relu" :    {"yes" : 0, "no" : 0},
-                                                        "trop" :    {"yes" : 0, "no" : 0}},
-                                    "ModifiedLeNet5" :  {"maxout" : {"yes" : 0, "no" : 0},
-                                                        "relu" :    {"yes" : 0, "no" : 0},
-                                                        "trop" :    {"yes" : 0, "no" : 0}},
-                                    "MobileNet" :       {"maxout" : {"yes" : 0, "no" : 1},
-                                                        "relu" :    {"yes" : 0, "no" : 0},
-                                                        "trop" :    {"yes" : 0, "no" : 0}}},
+                                                        "relu" :    {"yes" : 1, "no" : 0},
+                                                        "trop" :    {"yes" : 1, "no" : 0}},
+                                    "MobileNet" :       {"maxout" : {"yes" : 1, "no" : 0},
+                                                        "relu" :    {"yes" : 1, "no" : 0},
+                                                        "trop" :    {"yes" : 1, "no" : 0}}},
+                                                        
                         "cifar10" : {"ResNet50" :       {"trop" :   {"yes" : 0, "no" : 0},
                                                         "relu" :    {"yes" : 0, "no" : 0},
                                                         "maxout" :  {"yes" : 0, "no" : 0}},
@@ -168,6 +195,7 @@ def find_directories_with_keyphrase(root_dir, dataset_name):
                                     "EfficientNetB4" :  {"maxout" : {"yes" : 0, "no" : 0},
                                                         "relu" :    {"yes" : 0, "no" : 0},
                                                         "trop" :    {"yes" : 0, "no" : 0}}},
+                                                        
                         "cifar100" : {"ResNet50" :      {"maxout" : {"yes" : 0, "no" : 0},
                                                         "relu" :    {"yes" : 0, "no" : 0},
                                                         "trop" :    {"yes" : 0, "no" : 0}},
@@ -213,15 +241,15 @@ def save_location_attack_results(arg_dataset, name, batch_chunk, total_batch_chu
     base_model = list_dirname[1]
     top_layer = list_dirname[2]
     adv_train = list_dirname[3]
-    if not os.path.exists('attack_results'):  # Check if directory doesn't exist
-        os.makedirs('attack_results')
-    if not os.path.exists(f'attack_results/{arg_dataset}'):  # Check if directory doesn't exist
-        os.makedirs(f'attack_results/{arg_dataset}')
-    if not os.path.exists(f'attack_results/{arg_dataset}/{base_model}'):  # Check if directory doesn't exist
-        os.makedirs(f'attack_results/{arg_dataset}/{base_model}')
-    if not os.path.exists(f'attack_results/{arg_dataset}/{base_model}/{top_layer}'):  # Check if directory doesn't exist
-        os.makedirs(f'attack_results/{arg_dataset}/{base_model}/{top_layer}')
-    if not os.path.exists(f'attack_results/{arg_dataset}/{base_model}/{top_layer}/{adv_train}'):  # Check if directory doesn't exist
-        os.makedirs(f'attack_results/{arg_dataset}/{base_model}/{top_layer}/{adv_train}')
-        #{dataset_name}_{base_model}_{top_layer}_{adv_train}
-    return f'attack_results/{arg_dataset}/{base_model}/{top_layer}/{adv_train}/{name}_{batch_chunk}_of_{total_batch_chunks}_{attack_type}.csv'
+    if not os.path.exists('new_attack_results'):  # Check if directory doesn't exist
+        os.makedirs('new_attack_results')
+    if not os.path.exists(f'new_attack_results/{arg_dataset}'):  # Check if directory doesn't exist
+        os.makedirs(f'new_attack_results/{arg_dataset}')
+    if not os.path.exists(f'new_attack_results/{arg_dataset}/{base_model}'):  # Check if directory doesn't exist
+        os.makedirs(f'new_attack_results/{arg_dataset}/{base_model}')
+    if not os.path.exists(f'new_attack_results/{arg_dataset}/{base_model}/{top_layer}'):  # Check if directory doesn't exist
+        os.makedirs(f'new_attack_results/{arg_dataset}/{base_model}/{top_layer}')
+    if not os.path.exists(f'new_attack_results/{arg_dataset}/{base_model}/{top_layer}/{adv_train}'):  # Check if directory doesn't exist
+        os.makedirs(f'new_attack_results/{arg_dataset}/{base_model}/{top_layer}/{adv_train}')
+    new_name = name.replace('.keras', '')
+    return f'new_attack_results/{arg_dataset}/{base_model}/{top_layer}/{adv_train}/{new_name}_{batch_chunk}_of_{total_batch_chunks}_{attack_type}.csv'

@@ -22,7 +22,7 @@ def main(_):
     arg_dataset = sys.argv[4]
     print('argument dataset', arg_dataset)
 
-    eps, data, info, model_paths = load_attack_settings(arg_dataset, batch_size, "master_models")#, adv_train)
+    eps, data, info, model_paths = load_attack_settings(arg_dataset, batch_size, "new_master_models")#, adv_train)
 
     total_test_examples = info.splits['test'].num_examples
     total_batches = math.ceil(total_test_examples / batch_size)

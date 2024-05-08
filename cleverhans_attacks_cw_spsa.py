@@ -13,10 +13,10 @@ from edited_cleverhans.edited_carlini_wagner_l2 import carlini_wagner_l2
 from edited_cleverhans.edited_spsa import spsa
 
 def main(_):
-    batch_chunk = 0#int(sys.argv[1])
-    total_batch_chunks = 250#int(sys.argv[2])
-    batch_size = 2#int(sys.argv[3]) 
-    arg_dataset = "mnist"#sys.argv[4]
+    batch_chunk = int(sys.argv[1])
+    total_batch_chunks = int(sys.argv[2])
+    batch_size = int(sys.argv[3]) 
+    arg_dataset = sys.argv[4]
     print('argument dataset', arg_dataset)
 
     num_classes = 10
@@ -24,7 +24,7 @@ def main(_):
 
     print("starting run")
     # Load data
-    eps, data, info, model_paths = load_attack_settings(arg_dataset, batch_size, "master_models")#, adv_train)
+    eps, data, info, model_paths = load_attack_settings(arg_dataset, batch_size, "new_master_models")#, adv_train)
 
     total_test_examples = info.splits['test'].num_examples
     total_batches = math.ceil(total_test_examples / batch_size)
@@ -69,7 +69,7 @@ def main(_):
                         'binary_search_steps' : 10,
                         'confidence' : 0,
                         'initial_const' : 10,
-                        'learning_rate' : 1.0 #used 0.1 for everything else
+                        'learning_rate' : 0.1
                         }
             
             if cw_targeted:

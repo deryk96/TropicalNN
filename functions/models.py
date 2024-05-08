@@ -54,7 +54,7 @@ class CustomModelClass(Model):
                  num_classes, 
                  top, 
                  initializer=initializers.RandomNormal(mean=0, stddev=1., seed=0), 
-                 num_maxout_neurons = 100, 
+                 num_maxout_neurons = 64, 
                  dropout_rate = 0.5,
                  lam = 0,
                  **kwargs):
@@ -64,19 +64,8 @@ class CustomModelClass(Model):
         self.dropout_rate = dropout_rate
         self.num_maxout_neurons = num_maxout_neurons
         self.lam = lam
-        self.top_type = top
-        #if top == "relu":
-            #self._build_relu()
-            #self.top_processor = self.simple_top
-        #elif top == "trop":
-            #self._build_trop()
-            #self.top_processor = self.simple_top
-        #elif top == "maxout":
-            #self._build_maxout()
-            #self.top_processor = self.maxout_top
-        #else:
-            #raise ValueError("Invalid top layer specified")
-        self._select_top_layer(top)  # Initialize layers based on top type
+        self.top = top
+        self._select_top_layer(self.top)  # Initialize layers based on top type
 
     def _select_top_layer(self, top):
         if top == "relu":
@@ -92,15 +81,21 @@ class CustomModelClass(Model):
             raise ValueError("Invalid top layer specified")
 
     def _build_relu(self):
-        self.top = Dense(self.num_classes)
+        self.top_layer = Sequential([
+            Dense(64, activation="relu", name="last_fc"),
+            Dense(self.num_classes)
+        ])
 
     def _build_trop(self):
-        self.top = Sequential([
+        self.top_layer = Sequential([
+            Dense(64, activation="relu", name="last_fc"),
             TropEmbedMaxMin(self.num_classes, initializer_w=self.initializer, lam=self.lam),
             ChangeSignLayer(),
         ])
 
     def _build_maxout(self):
+        self.top_layer = None
+        self.dense_0 = Dense(64, activation="relu", name="last_fc")
         self.dense_1 = Dense(self.num_maxout_neurons * self.num_classes, kernel_initializer=self.initializer)
         self.dense_2 = Dense(self.num_maxout_neurons * self.num_classes, kernel_initializer=self.initializer)
         self.dropout_1 = Dropout(self.dropout_rate)
@@ -109,15 +104,17 @@ class CustomModelClass(Model):
         self.maxout_2 = Maxout(num_units=self.num_classes, axis=-1)
 
     def simple_top(self, x, training):
-        return self.top(x)
+        return self.top_layer(x)
 
     def maxout_top(self, x, training):
+        x = self.dense_0(x)
+
         x_1 = self.dense_1(x)
         x_1 = self.dropout_1(x_1, training=training)
         x_1 = self.maxout_1(x_1)
 
         x_2 = self.dense_2(x)
-        x_2 = self.dropout_1(x_2, training=training)
+        x_2 = self.dropout_2(x_2, training=training)
         x_2 = self.maxout_2(x_2)
         return x_1 - x_2
 
@@ -125,7 +122,7 @@ class CustomModelClass(Model):
         config = super().get_config()
         config.update({
             'num_classes': self.num_classes,
-            'top_type': self.top_type,
+            'top': self.top,
             'initializer': initializers.serialize(self.initializer),
             'num_maxout_neurons': self.num_maxout_neurons,
             'dropout_rate': self.dropout_rate,
@@ -136,6 +133,58 @@ class CustomModelClass(Model):
     @classmethod
     def from_config(cls, config, custom_objects=None):
         return cls(**config)
+
+class AlexNetModel(CustomModelClass):
+    def __init__(self, 
+                 num_classes, 
+                 top, 
+                 initializer=initializers.HeNormal(), 
+                 num_maxout_neurons=100, 
+                 dropout_rate=0.5, 
+                 input_shape=(32, 32, 3), 
+                 **kwargs):
+        super(AlexNetModel, self).__init__(num_classes=num_classes,
+                                           top=top,
+                                           initializer=initializer,
+                                           num_maxout_neurons=num_maxout_neurons,
+                                           dropout_rate=dropout_rate,
+                                           **kwargs)
+        self.input_shape = input_shape
+        self._build_base()
+
+    def _build_base(self):
+        self.base_layers = Sequential([
+            Conv2D(96, kernel_size=(11, 11), strides=(4, 4), activation='relu', input_shape=self.input_shape, padding='same', kernel_initializer=self.initializer),
+            MaxPooling2D(pool_size=(3, 3), strides=(2, 2)),
+            Conv2D(256, kernel_size=(5, 5), activation='relu', padding='same', kernel_initializer=self.initializer),
+            MaxPooling2D(pool_size=(3, 3), strides=(2, 2)),
+            Conv2D(384, kernel_size=(3, 3), activation='relu', padding='same', kernel_initializer=self.initializer),
+            Conv2D(384, kernel_size=(3, 3), activation='relu', padding='same', kernel_initializer=self.initializer),
+            Conv2D(256, kernel_size=(3, 3), activation='relu', padding='same', kernel_initializer=self.initializer),
+            MaxPooling2D(pool_size=(3, 3), strides=(2, 2)),
+            Flatten(),
+            Dense(4096, activation='relu', kernel_initializer=self.initializer),
+            Dropout(0.5),
+            Dense(4096, activation='relu', kernel_initializer=self.initializer),
+            Dropout(0.5),
+        ])
+
+    def call(self, inputs, training=True):
+        x = self.base_layers(inputs)
+        return self.top_processor(x, training)
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            'input_shape': self.input_shape
+        })
+        return config
+
+    @classmethod
+    def from_config(cls, config, custom_objects=None):
+        return cls(**config)
+
+
 
 class VGG16Model(CustomModelClass):
     def __init__(self, 
@@ -161,8 +210,12 @@ class VGG16Model(CustomModelClass):
         self.base_layers = Sequential([
             VGG16(weights=None, include_top=False, input_shape=self.input_shape),
             Flatten(),
-            Dense(4096, activation="relu", name="fc1"),
-            Dense(4096, activation="relu", name="fc2"),
+            BatchNormalization(),
+            Dropout(0.5),
+            Dense(1024, activation="relu", name="fc1"),#, kernel_initializer=self.initializer),
+            Dropout(0.5),
+            #Dense(256, activation="relu", name="fc2"),#, kernel_initializer=self.initializer),
+            #Dropout(0.4),
         ])
 
     def call(self, inputs, training=True):
@@ -204,7 +257,7 @@ class ModifiedLeNet5(CustomModelClass):
             MaxPooling2D((2, 2)),
             Conv2D(64, (3, 3), activation='relu'),
             Flatten(),
-            Dense(64),
+            Dense(64, activation='relu'),
         ])
 
     def call(self, inputs, training=True):
