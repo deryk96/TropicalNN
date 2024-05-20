@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 import os
 from functions.load_data import ld_mnist, ld_svhn, ld_cifar10, ld_cifar100
-from functions.models import ResNet50Model, ModifiedLeNet5, LeNet5, VGG16Model, MobileNetModel, EfficientNetB4Model, AlexNetModel
+from functions.models import ResNet50Model, ModifiedLeNet5, LeNet5, VGG16Model, MobileNetModel, EfficientNetB4Model, AlexNetModel, MMRModel
 
 def l2(x, y):
     return tf.sqrt(tf.reduce_sum(tf.square(x - y), list(range(1, len(x.shape)))))
@@ -99,6 +99,8 @@ def model_choice(dataset_name, base_model, top, adv_train):
         model =  EfficientNetB4Model(num_classes=num_classes, top=top)
     elif base_model == "AlexNet":
         model =  AlexNetModel(num_classes=num_classes, top=top)
+    elif base_model == "MMR":
+        model = MMRModel(num_classes=num_classes)
 
     if adv_train == "yes":
         starting_model_path = find_model(dataset_name, base_model, top)
@@ -167,24 +169,26 @@ def load_build_settings(dataset_name, base_model_index, batch_size):
 def find_directories_with_keyphrase(root_dir, dataset_name):
     valid_datasets = ["mnist", "svhn", "cifar10", "cifar100"]
     valid_base_models = ["LeNet5", "ModifiedLeNet5", "MobileNet", "ResNet50", "VGG16", "EfficientNetB4"]
-    valid_top_layers = ["maxout", "relu", "trop"]
-    models_to_attack = {
-                        "mnist" : {"LeNet5" :           {"maxout" : {"yes" : 0, "no" : 1},
-                                                        "relu" :    {"yes" : 0, "no" : 1},
-                                                        "trop" :    {"yes" : 0, "no" : 1}},
-                                    "ModifiedLeNet5" :  {"maxout" : {"yes" : 0, "no" : 1},
-                                                        "relu" :    {"yes" : 0, "no" : 1},
-                                                        "trop" :    {"yes" : 0, "no" : 1}}},
-                                                        
-                        "svhn" :  {"LeNet5" :           {"maxout" : {"yes" : 1, "no" : 0},
-                                                        "relu" :    {"yes" : 1, "no" : 0},
-                                                        "trop" :    {"yes" : 1, "no" : 0}},
-                                    "ModifiedLeNet5" :  {"maxout" : {"yes" : 1, "no" : 0},
-                                                        "relu" :    {"yes" : 1, "no" : 0},
-                                                        "trop" :    {"yes" : 1, "no" : 0}},
-                                    "MobileNet" :       {"maxout" : {"yes" : 1, "no" : 0},
-                                                        "relu" :    {"yes" : 1, "no" : 0},
-                                                        "trop" :    {"yes" : 1, "no" : 0}}},
+    valid_top_layers = ["maxout", "relu", "trop", "MMRModel"]
+    models_to_attack = {#mnist_ModifiedLeNet_MMRModel_no
+                        "mnist" : {"LeNet5" :           {"maxout" : {"yes" : 0, "no" : 0},
+                                                        "relu" :    {"yes" : 0, "no" : 0},
+                                                        "trop" :    {"yes" : 0, "no" : 0}},
+                                    "ModifiedLeNet5" :  {"maxout" : {"yes" : 0, "no" : 0},
+                                                        "relu" :    {"yes" : 0, "no" : 0},
+                                                        "trop" :    {"yes" : 0, "no" : 0},
+                                                        "MMRModel" :{"yes" : 0, "no" : 1}}},
+                                                
+                        "svhn" :  {"LeNet5" :           {"maxout" : {"yes" : 0, "no" : 0},
+                                                        "relu" :    {"yes" : 0, "no" : 0},
+                                                        "trop" :    {"yes" : 0, "no" : 0}},
+                                    "ModifiedLeNet5" :  {"maxout" : {"yes" : 0, "no" : 0},
+                                                        "relu" :    {"yes" : 0, "no" : 0},
+                                                        "trop" :    {"yes" : 0, "no" : 0},
+                                                        "MMRModel" :{"yes" : 0, "no" : 1}},
+                                    "MobileNet" :       {"maxout" : {"yes" : 0, "no" : 0},
+                                                        "relu" :    {"yes" : 0, "no" : 0},
+                                                        "trop" :    {"yes" : 0, "no" : 0}}},
                                                         
                         "cifar10" : {"ResNet50" :       {"trop" :   {"yes" : 0, "no" : 0},
                                                         "relu" :    {"yes" : 0, "no" : 0},

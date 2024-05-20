@@ -21,7 +21,7 @@ from custom_layers.tropical_layers import TropEmbedMaxMin, ChangeSignLayer
 from tensorflow import reduce_max, reshape, shape, concat
 from tensorflow.keras import Sequential, Model, initializers
 from tensorflow.keras.layers import Dense, MaxPooling2D, Flatten, Conv2D, Dropout, GlobalAveragePooling2D, Layer, AveragePooling2D, DepthwiseConv2D, ReLU, BatchNormalization
-from tensorflow.keras.applications import ResNet50, VGG16, MobileNet, EfficientNetB4
+from tensorflow.keras.applications import ResNet50, VGG16, MobileNet, EfficientNetB0, VGG19
 from tensorflow.keras.models import Sequential, Model
 from tensorflow.keras.utils import serialize_keras_object, deserialize_keras_object
 
@@ -53,7 +53,7 @@ class CustomModelClass(Model):
     def __init__(self, 
                  num_classes, 
                  top, 
-                 initializer=initializers.RandomNormal(mean=0, stddev=1., seed=0), 
+                 initializer=initializers.RandomNormal(mean=0, stddev=0.001, seed=0), 
                  num_maxout_neurons = 64, 
                  dropout_rate = 0.5,
                  lam = 0,
@@ -82,20 +82,20 @@ class CustomModelClass(Model):
 
     def _build_relu(self):
         self.top_layer = Sequential([
-            Dense(64, activation="relu", name="last_fc"),
+            Dense(256, activation="relu", name="last_fc"),
             Dense(self.num_classes)
         ])
 
     def _build_trop(self):
         self.top_layer = Sequential([
-            Dense(64, activation="relu", name="last_fc"),
+            Dense(256, activation="relu", name="last_fc"),
             TropEmbedMaxMin(self.num_classes, initializer_w=self.initializer, lam=self.lam),
             ChangeSignLayer(),
         ])
 
     def _build_maxout(self):
         self.top_layer = None
-        self.dense_0 = Dense(64, activation="relu", name="last_fc")
+        self.dense_0 = Dense(256, activation="relu", name="last_fc")
         self.dense_1 = Dense(self.num_maxout_neurons * self.num_classes, kernel_initializer=self.initializer)
         self.dense_2 = Dense(self.num_maxout_neurons * self.num_classes, kernel_initializer=self.initializer)
         self.dropout_1 = Dropout(self.dropout_rate)
@@ -154,8 +154,8 @@ class AlexNetModel(CustomModelClass):
 
     def _build_base(self):
         self.base_layers = Sequential([
-            Conv2D(96, kernel_size=(11, 11), strides=(4, 4), activation='relu', input_shape=self.input_shape, padding='same', kernel_initializer=self.initializer),
-            MaxPooling2D(pool_size=(3, 3), strides=(2, 2)),
+            Conv2D(96, kernel_size=(3, 3), strides=(1, 1), activation='relu', input_shape=self.input_shape, padding='same', kernel_initializer=self.initializer),
+            MaxPooling2D(pool_size=(3, 3), strides=(1, 1)),
             Conv2D(256, kernel_size=(5, 5), activation='relu', padding='same', kernel_initializer=self.initializer),
             MaxPooling2D(pool_size=(3, 3), strides=(2, 2)),
             Conv2D(384, kernel_size=(3, 3), activation='relu', padding='same', kernel_initializer=self.initializer),
@@ -190,7 +190,7 @@ class VGG16Model(CustomModelClass):
     def __init__(self, 
                  num_classes, 
                  top,
-                 initializer=initializers.RandomNormal(mean=0, stddev=1., seed=0), 
+                 initializer=initializers.RandomNormal(mean=0, stddev=0.1, seed=0), 
                  num_maxout_neurons = 100, 
                  dropout_rate = 0.5,
                  input_shape = (32, 32, 3),
@@ -210,9 +210,9 @@ class VGG16Model(CustomModelClass):
         self.base_layers = Sequential([
             VGG16(weights=None, include_top=False, input_shape=self.input_shape),
             Flatten(),
-            BatchNormalization(),
-            Dropout(0.5),
-            Dense(1024, activation="relu", name="fc1"),#, kernel_initializer=self.initializer),
+            #BatchNormalization(),
+            #Dropout(0.5),
+            Dense(512, activation="relu", name="fc1"),#, kernel_initializer=self.initializer),
             Dropout(0.5),
             #Dense(256, activation="relu", name="fc2"),#, kernel_initializer=self.initializer),
             #Dropout(0.4),
@@ -359,7 +359,7 @@ class EfficientNetB4Model(CustomModelClass):
     def __init__(self, 
                  num_classes, 
                  top,
-                 initializer=initializers.RandomNormal(mean=0, stddev=1., seed=0), 
+                 initializer=initializers.RandomNormal(mean=0, stddev=0.001, seed=0), 
                  num_maxout_neurons = 100, 
                  dropout_rate = 0.5,
                  input_shape = (32, 32, 3),
@@ -377,7 +377,7 @@ class EfficientNetB4Model(CustomModelClass):
 
     def _build_base(self):
         self.base_layers = Sequential([
-            EfficientNetB4(weights=None, include_top=False, input_shape=self.input_shape),
+            EfficientNetB0(weights=None, include_top=False, input_shape=self.input_shape),
             GlobalAveragePooling2D(),
         ])
 
@@ -401,7 +401,7 @@ class ResNet50Model(CustomModelClass):
     def __init__(self, 
                  num_classes, 
                  top,
-                 initializer=initializers.RandomNormal(mean=0, stddev=1., seed=0),
+                 initializer=initializers.RandomNormal(mean=0, stddev=0.01, seed=0),
                  num_maxout_neurons=100,  
                  dropout_rate = 0.5,
                  input_shape = (32, 32, 3),
@@ -439,11 +439,12 @@ class ResNet50Model(CustomModelClass):
         return cls(**config)
 
 
-class CH_MMRReluConv3Layer(Model):
-    def __init__(self, num_classes, initializer_relu=initializers.RandomNormal(mean=0.5, stddev=1., seed=0)):
-        super(CH_MMRReluConv3Layer, self).__init__()
+class MMRModel(Model):
+    def __init__(self, num_classes, initializer=initializers.RandomNormal(mean=0.5, stddev=1., seed=0),
+                 **kwargs):
+        super(MMRModel, self).__init__(**kwargs)
         self.num_classes = num_classes
-        self.initializer_relu = initializer_relu
+        self.initializer = initializer
         self._build_model()
 
     def _build_model(self):
@@ -454,8 +455,9 @@ class CH_MMRReluConv3Layer(Model):
         self.conv_layer3 = Conv2D(64, (3, 3), activation='relu')
         self.flatten = Flatten()  
 
-        self.dense_layer = Dense(64, activation='relu')
-        self.final_layer = Dense(self.num_classes, kernel_initializer=self.initializer_relu)
+        self.dense_layer1 = Dense(64, activation='relu')
+        self.dense_layer2 = Dense(64, activation='relu')
+        self.final_layer = Dense(self.num_classes, kernel_initializer=self.initializer)
 
     def call(self, inputs, training=True, return_feature_maps=False):
         feature_maps = []
@@ -478,7 +480,11 @@ class CH_MMRReluConv3Layer(Model):
 
         x = self.flatten(x)
 
-        x = self.dense_layer(x)
+        x = self.dense_layer1(x)
+        if return_feature_maps:
+            feature_maps.append(x)
+
+        x = self.dense_layer2(x)
         if return_feature_maps:
             feature_maps.append(x)
 
@@ -488,3 +494,14 @@ class CH_MMRReluConv3Layer(Model):
             return logits, feature_maps
         return logits
     
+    def get_config(self):
+        config = super().get_config()
+        config.update({
+            'num_classes': self.num_classes,
+            'initializer': initializers.serialize(self.initializer),
+        })
+        return config
+
+    @classmethod
+    def from_config(cls, config, custom_objects=None):
+        return cls(**config)

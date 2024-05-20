@@ -44,8 +44,8 @@ def main(_):
         "cifar10" : {"ResNet50" :       {"trop":    {"yes" : 0, "no" : 0}, #here
                                         "relu" :    {"yes" : 0, "no" : 0}, #here
                                         "maxout" :  {"yes" : 0, "no" : 0}},#here
-                    "AlexNet" :           {"maxout" : {"yes" : 0, "no" : 0}, #here
-                                        "relu" :    {"yes" : 0, "no" : 1}, #here
+                    "VGG16" :           {"maxout" : {"yes" : 0, "no" : 0}, #here
+                                        "relu" :    {"yes" : 0, "no" : 0}, #here
                                         "trop" :    {"yes" : 0, "no" : 0}},#here
                     "EfficientNetB4" :  {"maxout" : {"yes" : 0, "no" : 0},
                                         "relu" :    {"yes" : 0, "no" : 0},
@@ -57,19 +57,19 @@ def main(_):
                                         "relu" :    {"yes" : 0, "no" : 0}, #here
                                         "trop" :    {"yes" : 0, "no" : 0}},#here
                     "EfficientNetB4" :  {"maxout" : {"yes" : 0, "no" : 0},
-                                        "relu" :    {"yes" : 0, "no" : 0},
+                                        "relu" :    {"yes" : 0, "no" : 1},
                                         "trop" :    {"yes" : 0, "no" : 0}}},
     }
 
     models = load_models(config=dict_settings)
     old_dataset_name = "not set"
     model_counter = -1
-    batch_size = 256
+    batch_size = 512
     eps_iter_portion = 0.2
     att_steps = 10
-    early_stopping_patience = 3  # Number of epochs to wait for improvement
+    early_stopping_patience = 5  # Number of epochs to wait for improvement
     min_delta = 0.001  # Minimum change to qualify as an improvement
-    nb_epochs = 200
+    nb_epochs = 300
 
     for name, model in models.items():
         # --- determine if we are running a given model (for use in batch runs) --- 
@@ -112,10 +112,12 @@ def main(_):
             boo_adv_train = False
         else:
             boo_adv_train = True
-
+            
+        #boo_update_weights = True
         # --- initiate tensorflow objects ---
-        lr = 0.01
-        optimizer = tf.optimizers.Adam(learning_rate=lr)#, weight_decay=0.0001, use_ema=True, ema_momentum=0.9)
+        lr = 0.1
+        #optimizer = tf.optimizers.Adam(learning_rate=lr)#, weight_decay=0.0001, use_ema=True, ema_momentum=0.9)
+        optimizer = tf.optimizers.SGD(learning_rate = lr, momentum = 0.90)
         loss_object = tf.losses.SparseCategoricalCrossentropy(from_logits=True)#, reduction=tf.keras.losses.Reduction.NONE)
         train_loss = tf.metrics.Mean(name="train_loss")
         train_acc = tf.metrics.SparseCategoricalAccuracy()
@@ -215,14 +217,14 @@ def main(_):
             print(f'---- epoch {epoch}, Validation Accuracy {val_accuracy}, Best: {best_val_accuracy} ----') #Validation Loss: {val_loss}, Best: {best_val_loss},
             
             # --- kill training if conditions are met
-            if patience_counter >= early_stopping_patience and epoch >= 9:
+            if patience_counter >= early_stopping_patience and epoch >= 299:
                 patience_counter = 0
                 current_lr = optimizer.learning_rate.numpy()
                 optimizer.learning_rate.assign(current_lr/10)
                 lr_reduced_counter += 1
                 if lr_reduced_counter > 3:
                     break
-                print(f"*** Updating learning rate from {current_lr} to {current_lr/10} ***")
+                print(f"**** Updating learning rate from {current_lr} to {current_lr/10} ****")
 
         # --- printout training metrics --- 
         elapsed = time.time() - start

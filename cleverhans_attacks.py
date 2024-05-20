@@ -16,10 +16,10 @@ from cleverhans.tf2.attacks.fast_gradient_method import fast_gradient_method
 def main(_):
     # argument parsing
 
-    batch_chunk = int(sys.argv[1])
-    total_batch_chunks = int(sys.argv[2])
-    batch_size = int(sys.argv[3]) 
-    arg_dataset = sys.argv[4]
+    batch_chunk = 0#int(sys.argv[1])
+    total_batch_chunks = 1#int(sys.argv[2])
+    batch_size = 128#int(sys.argv[3]) 
+    arg_dataset = "mnist"#sys.argv[4]
     print('argument dataset', arg_dataset)
 
     eps, data, info, model_paths = load_attack_settings(arg_dataset, batch_size, "new_master_models")#, adv_train)
