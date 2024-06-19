@@ -8,16 +8,9 @@ Module: models.py
 
 This file contains a collection of Tensorflow models that utilize many customized tropical layers that we use for our experiments.
 
-Functions:
-- functional_conv
-- pre_model
-- post_model
-- functional_build_model
-- trop_conv3layer_logits
-- trop_conv3layer_manyMaxLogits
 '''
 
-from custom_layers.tropical_layers import TropEmbedMaxMin, ChangeSignLayer, TropAsymmetricMax, TropAsymmetricMin
+from custom_layers.tropical_layers import TropEmbed, ChangeSignLayer
 from tensorflow import reduce_max, reshape, shape, concat
 from tensorflow.keras import Sequential, Model, initializers
 from tensorflow.keras.layers import Dense, MaxPooling2D, Flatten, Conv2D, Dropout, GlobalAveragePooling2D, Layer, AveragePooling2D, DepthwiseConv2D, ReLU, BatchNormalization
@@ -94,22 +87,22 @@ class CustomModelClass(Model):
 
     def _build_trop(self):
         self.top_layer = Sequential([
-            Dense(3, activation="relu", name="last_fc"),
-            TropEmbedMaxMin(self.num_classes, initializer_w=self.initializer, lam=self.lam, name="tropical"),
+            Dense(64, activation="relu", name="last_fc"),
+            TropEmbed(self.num_classes, initializer_w=self.initializer, lam=self.lam, distance_metric = "sym", name="tropical"),
             ChangeSignLayer(),
         ])
     
     def _build_trop_asym_max(self):
         self.top_layer = Sequential([
-            #Dense(64, activation="relu", name="last_fc"),
-            TropAsymmetricMax(self.num_classes, initializer_w=self.initializer, lam=self.lam, name="tropical"),
+            Dense(64, activation="relu", name="last_fc"),
+            TropEmbed(self.num_classes, initializer_w=self.initializer, lam=self.lam, distance_metric = "asym_max", name="tropical"),
             ChangeSignLayer(),
         ])
 
     def _build_trop_asym_min(self):
         self.top_layer = Sequential([
-            #Dense(64, activation="relu", name="last_fc"),
-            TropAsymmetricMin(self.num_classes, initializer_w=self.initializer, lam=self.lam, name="tropical"),
+            Dense(64, activation="relu", name="last_fc"),
+            TropEmbed(self.num_classes, initializer_w=self.initializer, lam=self.lam, distance_metric = "asym_min", name="tropical"),
             ChangeSignLayer(),
         ])
 

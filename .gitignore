@@ -1,3 +1,4 @@
+**/__pycache__/
 attack_results/
 saved_models/
 master_models/
@@ -5,7 +6,6 @@ new_master_models/
 output_data/
 batch_print_outputs/
 experiments/
-__pycache__/
 images_figures/
 slides/
 ignore/

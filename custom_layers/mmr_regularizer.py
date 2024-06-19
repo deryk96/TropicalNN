@@ -1,3 +1,21 @@
+# mmr_regularizer.py
+# Description: This file contains the python functions required to compute the MMR-Universal regularizer which is adapted from Croce and Hein 2019: https://arxiv.org/abs/1905.11213.
+# Author: Kurt Pasque
+# Last Update: June 19, 2024
+
+'''
+Module: mmr_regularizer.py
+
+This file contains a collection of class object for customized tropical layers to be used in Tensorflow neural networks.
+
+Functions:
+- get_min_distances
+- zero_out_non_min_distances 
+- calc_v_fc
+- calc_v_conv
+- mmr_cnn
+'''
+
 import tensorflow as tf
 import numpy as np
 

@@ -1,36 +1,41 @@
 # tropical_layers.py
 # Description: This file contains a collection of class object for customized tropical layers to be used in Tensorflow neural networks.
 # Author: Kurt Pasque
-# Date: November 22, 2023
+# Initial Build Date: November 22, 2023
+# Last Update: June 19, 2024
 
 '''
 Module: tropical_layers.py
 
 This file contains a collection of class object for customized tropical layers to be used in Tensorflow neural networks.
 
-Functions:
-- ChangeSignLayer : Takes flat inputs and multiplies by -1
+Classes:
+- ChangeSignLayer : Takes flat inputs and multiplies by -1 and adds 50
 - SoftminLayer : Takes flat inputs and applieds the softmin activation function to it. 
-- SoftmaxLayer : Takes flat inputs and applieds the softmax activation function to it. 
-- TropReg : Projected-gradient-descent attack on batch of input vectors given label, loss object, and model.
-- attackTestSetBatch : Attack a whole set of data batch-by-batch given loss object, model, data, and type of attack.
+- TropRegIncreaseDistance : Custom Tensorflow regularizer to increase the tropical symmetric distance between the weights of a layer.
+- TropRegDecreaseDistance : Custom Tensorflow regularizer to decrease the tropical symmetric distance between the weights of a layer.  
+- TropEmbed : Custom TensorFlow layer implementing fully connected Tropical Embedding Layer.
+- TropConv2D : Custom TensorFlow layer implementing a convolutional Tropical Embedding Layer. 
+- TropEmbedTop2 : Custom TensorFlow layer implementing Tropical Embedding for top 2 distances.
 '''
 
-from tensorflow import reshape, expand_dims, reduce_max ,reduce_min,reduce_sum, float32, transpose, shape, ones, bool, exp, boolean_mask, zeros, concat, add, fill, constant
-from tensorflow.math import top_k, reduce_sum, exp, logical_not, maximum, minimum, scalar_mul
+from tensorflow import reshape, expand_dims, reduce_max ,reduce_min,reduce_sum, transpose, shape, ones, bool, exp, boolean_mask, add, constant
+from tensorflow.math import top_k, logical_not, scalar_mul
 from tensorflow.keras.layers import Layer
 from tensorflow.keras.backend import repeat_elements
 from tensorflow.keras import initializers, regularizers
 from tensorflow.image import extract_patches
 from tensorflow.linalg import band_part
-from keras.constraints import NonNeg
 
 class ChangeSignLayer(Layer):
     '''
     Custom TensorFlow layer to change the sign of the input tensor.
     '''
 
-    def __init__(self, **kwargs):
+    def __init__(self, 
+                 constant_to_add = 50.0,
+                 multiplier = -1.0,
+                 **kwargs):
         '''
         Initializes the ChangeSignLayer.
 
@@ -40,6 +45,8 @@ class ChangeSignLayer(Layer):
             Additional keyword arguments for the Layer superclass.
         '''
         super(ChangeSignLayer, self).__init__(**kwargs)  # Initialize the Layer superclass
+        self.constand_to_add = constant_to_add
+        self.multiplier = multiplier
 
     def call(self, inputs):
         '''
@@ -55,7 +62,7 @@ class ChangeSignLayer(Layer):
         output : tensorflow tensor object
             Output tensor with signs changed.
         '''
-        return add(constant(50.0), scalar_mul(-1.0, inputs))# Change the sign of the input tensor by multiplying with -1
+        return add(constant(self.constand_to_add), scalar_mul(self.multiplier, inputs))# Change the sign of the input tensor by multiplying with -1
     
 
 class SoftminLayer(Layer):
@@ -90,76 +97,6 @@ class SoftminLayer(Layer):
         '''
         negative_exponents = exp(-inputs)
         return negative_exponents / reduce_sum(negative_exponents, axis=-1, keepdims=True)
-
-
-class SoftmaxLayer(Layer):
-    '''
-    Custom TensorFlow layer implementing the Softmax activation function.
-    '''
-
-    def __init__(self, **kwargs):
-        '''
-        Initializes the SoftmaxLayer.
-
-        Parameters
-        ----------
-        **kwargs : dict
-            Additional keyword arguments for the Layer superclass.
-        '''
-        super(SoftmaxLayer, self).__init__(**kwargs)  # Initialize the Layer superclass
-
-    def call(self, inputs):
-        '''
-        Performs the forward pass of the SoftmaxLayer.
-
-        Parameters
-        ----------
-        inputs : tensorflow tensor object
-            Input tensor.
-
-        Returns
-        -------
-        output : tensorflow tensor object
-            Output tensor after applying the Softmax activation.
-        '''
-        exponents = exp(inputs)
-        return exponents / reduce_sum(exponents, axis=-1, keepdims=True)
-    
-
-class TropReg(regularizers.Regularizer):
-    '''
-    Custom TensorFlow regularizer implementing a regularization on Tropical weights where the spread of the weights is penalized. 
-    Serves to keep weights in a narrower band where the max weight and min weight are drawn closer together across the whole set of weights.
-    '''
-
-    def __init__(self, lam=1.0):
-        '''
-        Initializes the TropReg regularizer.
-
-        Parameters
-        ----------
-        lam : float, optional
-            Regularization parameter (default is 1.0).
-        '''
-        self.lam = lam
-
-    def __call__(self, weight_matrix):
-        '''
-        Calculates the Tropical regularization term.
-
-        Parameters
-        ----------
-        weight_matrix : tensorflow tensor object
-            Weight matrix of a layer.
-
-        Returns
-        -------
-        regularization_term : float
-            Tropical regularization term.
-        '''
-        max_vals, _ = top_k(weight_matrix, 1)
-        min_vals, _ = top_k(-weight_matrix, 1)
-        return self.lam * reduce_sum(max_vals[:, 0] + min_vals[:, 0])
 
 
 class TropRegIncreaseDistance(regularizers.Regularizer):
@@ -202,16 +139,22 @@ class TropRegIncreaseDistance(regularizers.Regularizer):
         n = shape(tropical_distances)[0]  # Get the shape of tropical distances
         mask = band_part(ones((n, n), dtype=bool), 0, -1)  # Create a mask to exclude the main diagonal
         flat_vector = boolean_mask(tropical_distances, logical_not(mask))  # Extract values not in the main diagonal
-        return self.lam * exp(-reduce_min(flat_vector))  # Apply exponential and scaling to obtain regularization term
+        return self.lam * 50/(reduce_min(flat_vector) ** 0.5)
+    
+    def get_config(self):
+        config = {
+            'lam': self.lam,
+        }
+        base_config = super(TropRegIncreaseDistance, self).get_config()
+        return dict(list(base_config.items()) + list(config.items()))
 
 
 class TropRegDecreaseDistance(regularizers.Regularizer):
     '''
     Custom TensorFlow regularizer implementing Tropical regularization
     to increase distances between weights in a layer. Penalizes weights 
-    that are close to one another. Serves to "spread" the weights out in 
-    an attempt to create a set of points that can more robustly define 
-    the decision boundaries of input data. 
+    that are close to one another in an attempt to create a set of points 
+    that can more robustly define the decision boundaries of input data. 
     '''
 
     def __init__(self, lam=1.0):
@@ -247,155 +190,26 @@ class TropRegDecreaseDistance(regularizers.Regularizer):
         flat_vector = boolean_mask(tropical_distances, logical_not(mask))  # Extract values not in the main diagonal
         return self.lam * reduce_max(flat_vector)  # Take max and multiple by lambda to obtain regularization term
 
-
-class TropEmbedTop2(Layer):
-    '''
-    Custom TensorFlow layer implementing Tropical Embedding for top 2 values.
-    '''
-
-    def __init__(self, units=2, input_dim=3):
-        '''
-        Initializes the TropEmbedTop2 layer.
-
-        Parameters
-        ----------
-        units : int, optional
-            Number of output units (default is 2).
-        input_dim : int, optional
-            Dimension of input data (default is 3).
-        '''
-        super(TropEmbedTop2, self).__init__()
-        self.w = self.add_weight(
-            shape=(units, input_dim),
-            initializer=initializers.RandomNormal(),
-            regularizer=TropicalRegularizer(lam=0.01),
-            trainable=True
-        )
-        self.units = units
-        self.input_dim = input_dim
-
-    def call(self, inputs):
-        '''
-        Performs the forward pass of the TropEmbedTop2 layer.
-
-        Parameters
-        ----------
-        inputs : tensorflow tensor object
-            Input tensor.
-
-        Returns
-        -------
-        output : tensorflow tensor object
-            Output tensor after applying Tropical Embedding for top 2 values.
-        '''
-        input_reshaped = reshape(inputs, [-1, 1, self.input_dim])  # Reshape input data
-        input_for_broadcast = repeat_elements(input_reshaped, self.units, 1)  # Repeat input for broadcasting
-        values, _ = top_k(input_for_broadcast + self.w, 2)  # Calculate top 2 values
-        return values[:, :, 0] - values[:, :, 1]  # Compute symmetric tropical distance
- 
-
-class TropEmbedMaxMin(Layer):
-    '''
-    Custom TensorFlow layer implementing Tropical Embedding for max-min distances.
-    '''
-
-    def __init__(self, units=2, initializer_w=initializers.random_normal, lam=0.0, axis_for_reduction=2, **kwargs):
-        '''
-        Initializes the TropEmbedMaxMin layer.
-
-        Parameters
-        ----------
-        units : int, optional
-            Number of output units (default is 2).
-        initializer_w : initializer function, optional
-            Weight initializer function (default is random_normal).
-        lam : float, optional
-            Regularization parameter (default is 0.0).
-        axis_for_reduction : int, optional
-            Axis for reduction in distance calculation (default is 2).
-        **kwargs : dict
-            Additional keyword arguments.
-        '''
-        super(TropEmbedMaxMin, self).__init__(**kwargs)
-        self.units = units
-        self.initializer_w = initializer_w
-        self.lam = lam
-        self.axis_for_reduction = axis_for_reduction
-
-    def build(self, input_shape):
-        input_dim = input_shape[-1]  # Extract the last dimension from input_shape
-        self.w = self.add_weight(name='tropical_fw',
-                                 shape=(self.units, input_dim),
-                                 initializer=self.initializer_w,
-                                 regularizer=TropRegIncreaseDistance(lam=self.lam),
-                                 trainable=False) ### CHANGE BACK TO TRUE SIRRRR
-        self.bias = self.add_weight(name='bias',
-                                    shape=(self.units,),
-                                    initializer="zeros",
-                                    trainable=False) ### CHANGE BACK TO TRUE SIRRRR
-        super(TropEmbedMaxMin, self).build(input_shape)
-
-    def call(self, x):
-        '''
-        Performs the forward pass of the TropEmbedMaxMin layer.
-
-        Parameters
-        ----------
-        x : tensorflow tensor object
-            Input tensor.
-
-        Returns
-        -------
-        trop_distance : tensorflow tensor object
-            Output tensor after applying Tropical Embedding for max-min distances.
-        '''
-        x_reshaped = reshape(x, [-1, 1, self.w.shape[-1]])  # Reshape input data
-        x_for_broadcast = repeat_elements(x_reshaped, self.units, 1)  # Repeat input for broadcasting
-        result_addition = x_for_broadcast + self.w  # Calculate addition of input and weights
-        trop_distance = reduce_max(result_addition, axis=(self.axis_for_reduction)) - reduce_min(result_addition, axis=(self.axis_for_reduction)) + self.bias  # Calculate tropical distances with bias
-        return trop_distance
-
     def get_config(self):
-        '''
-        Gets the configuration of the layer.
-
-        Returns
-        -------
-        config : dict
-            Configuration of the layer.
-        '''
         config = {
-            'units': self.units,
-            'initializer_w': initializers.serialize(self.initializer_w),
-            'lam': self.lam
+            'lam': self.lam,
         }
-        base_config = super(TropEmbedMaxMin, self).get_config()
+        base_config = super(TropRegDecreaseDistance, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
-
-    @classmethod
-    def from_config(cls, config):
-        '''
-        Creates a layer from its config.
-
-        Parameters
-        ----------
-        config : dict
-            Configuration of the layer.
-
-        Returns
-        -------
-        cls : TropEmbedMaxMin object
-            Instantiated TropEmbedMaxMin object with given configuration.
-        '''
-        return cls(**config)
     
 
-class TropAsymmetricMax(Layer):
+class TropEmbed(Layer):
     '''
     Custom TensorFlow layer implementing Tropical Embedding for max-min distances.
     '''
 
-    def __init__(self, units=2, initializer_w=initializers.random_normal, lam=0.0, axis_for_reduction=2, **kwargs):
+    def __init__(self, 
+                 units=2, 
+                 initializer_w=initializers.random_normal, 
+                 lam=0.0, 
+                 axis_for_reduction=2, 
+                 distance_metric = "sym",
+                 **kwargs):
         '''
         Initializes the TropEmbedMaxMin layer.
 
@@ -409,48 +223,70 @@ class TropAsymmetricMax(Layer):
             Regularization parameter (default is 0.0).
         axis_for_reduction : int, optional
             Axis for reduction in distance calculation (default is 2).
+        distance_metric : str, optional
+            Distance metric to employ. Possible options are "sym", "asym_max", "asym_min". (default is "sym")
         **kwargs : dict
             Additional keyword arguments.
         '''
-        super(TropAsymmetricMax, self).__init__(**kwargs)
+        super(TropEmbed, self).__init__(**kwargs)
         self.units = units
         self.initializer_w = initializer_w
         self.lam = lam
         self.axis_for_reduction = axis_for_reduction
-
+        self.distance_metric = distance_metric
+        if self.distance_metric == "sym":
+            self._distance_function = self._symmetric_distance
+        elif self.distance_metric == "asym_max":
+            self._distance_function = self._asymmetric_max_distance
+        elif self.distance_metric == "asym_min":
+            self._distance_function = self._asymmetric_min_distance
+        else:
+            raise ValueError(f"{self.distance_metric} unsupported. TropEmbed layer distance metric argument needs to be sym, asym_max, or asym_min")
+        
     def build(self, input_shape):
         input_dim = input_shape[-1]  # Extract the last dimension from input_shape
         self.w = self.add_weight(name='tropical_fw',
                                  shape=(self.units, input_dim),
                                  initializer=self.initializer_w,
                                  regularizer=TropRegIncreaseDistance(lam=self.lam),
-                                 trainable=True)
+                                 trainable=True) 
         self.bias = self.add_weight(name='bias',
                                     shape=(self.units,),
                                     initializer="zeros",
                                     trainable=True)
-        super(TropAsymmetricMax, self).build(input_shape)
+        super(TropEmbed, self).build(input_shape)
 
-    def call(self, x):
-        '''
-        Performs the forward pass of the TropEmbedMaxMin layer.
-
-        Parameters
-        ----------
-        x : tensorflow tensor object
-            Input tensor.
-
-        Returns
-        -------
-        trop_distance : tensorflow tensor object
-            Output tensor after applying Tropical Embedding for max-min distances.
-        '''
-        x_reshaped = reshape(x, [-1, 1, self.w.shape[-1]])  # Reshape input data
-        x_for_broadcast = repeat_elements(x_reshaped, self.units, 1)  # Repeat input for broadcasting
-        result_addition = x_for_broadcast + self.w  # Calculate addition of input and weights
+    def _symmetric_distance(self, result_addition):
+        trop_distance = reduce_max(result_addition, axis=(self.axis_for_reduction)) - reduce_min(result_addition, axis=(self.axis_for_reduction)) + self.bias  # Calculate tropical distances with bias
+        return trop_distance
+    
+    def _asymmetric_max_distance(self, result_addition):
         trop_distance = self.units*reduce_max(result_addition, axis=(self.axis_for_reduction)) - reduce_sum(result_addition, axis=(self.axis_for_reduction)) + self.bias  # Calculate tropical distances with bias
         return trop_distance
 
+    def _asymmetric_min_distance(self, result_addition):
+        trop_distance = reduce_sum(result_addition, axis=(self.axis_for_reduction)) - self.units*reduce_min(result_addition, axis=(self.axis_for_reduction)) + self.bias  # Calculate tropical distances with bias
+        return trop_distance
+
+    def call(self, x):
+        '''
+        Performs the forward pass of the TropEmbedMaxMin layer.
+
+        Parameters
+        ----------
+        x : tensorflow tensor object
+            Input tensor.
+
+        Returns
+        -------
+        trop_distance : tensorflow tensor object
+            Output tensor after applying Tropical Embedding for max-min distances.
+        '''
+        x_reshaped = reshape(x, [-1, 1, self.w.shape[-1]])  # Reshape input data
+        x_for_broadcast = repeat_elements(x_reshaped, self.units, 1)  # Repeat input for broadcasting
+        result_addition = x_for_broadcast + self.w  # Calculate addition of input and weights
+        return self._distance_function(result_addition=result_addition)
+
     def get_config(self):
         '''
         Gets the configuration of the layer.
@@ -463,9 +299,11 @@ class TropAsymmetricMax(Layer):
         config = {
             'units': self.units,
             'initializer_w': initializers.serialize(self.initializer_w),
-            'lam': self.lam
+            'lam': self.lam,
+            'axis_for_reduction': self.axis_for_reduction,
+            'distance_metric': self.distance_metric
         }
-        base_config = super(TropEmbedMaxMin, self).get_config()
+        base_config = super(TropEmbed, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
     @classmethod
@@ -485,110 +323,21 @@ class TropAsymmetricMax(Layer):
         '''
         return cls(**config)
     
-
-class TropAsymmetricMin(Layer):
-    '''
-    Custom TensorFlow layer implementing Tropical Embedding for max-min distances.
-    '''
-
-    def __init__(self, units=2, initializer_w=initializers.random_normal, lam=0.0, axis_for_reduction=2, **kwargs):
-        '''
-        Initializes the TropEmbedMaxMin layer.
-
-        Parameters
-        ----------
-        units : int, optional
-            Number of output units (default is 2).
-        initializer_w : initializer function, optional
-            Weight initializer function (default is random_normal).
-        lam : float, optional
-            Regularization parameter (default is 0.0).
-        axis_for_reduction : int, optional
-            Axis for reduction in distance calculation (default is 2).
-        **kwargs : dict
-            Additional keyword arguments.
-        '''
-        super(TropAsymmetricMin, self).__init__(**kwargs)
-        self.units = units
-        self.initializer_w = initializer_w
-        self.lam = lam
-        self.axis_for_reduction = axis_for_reduction
-
-    def build(self, input_shape):
-        input_dim = input_shape[-1]  # Extract the last dimension from input_shape
-        self.w = self.add_weight(name='tropical_fw',
-                                 shape=(self.units, input_dim),
-                                 initializer=self.initializer_w,
-                                 regularizer=TropRegIncreaseDistance(lam=self.lam),
-                                 trainable=True)
-        self.bias = self.add_weight(name='bias',
-                                    shape=(self.units,),
-                                    initializer="zeros",
-                                    trainable=True)
-        super(TropAsymmetricMin, self).build(input_shape)
-
-    def call(self, x):
-        '''
-        Performs the forward pass of the TropEmbedMaxMin layer.
-
-        Parameters
-        ----------
-        x : tensorflow tensor object
-            Input tensor.
-
-        Returns
-        -------
-        trop_distance : tensorflow tensor object
-            Output tensor after applying Tropical Embedding for max-min distances.
-        '''
-        x_reshaped = reshape(x, [-1, 1, self.w.shape[-1]])  # Reshape input data
-        x_for_broadcast = repeat_elements(x_reshaped, self.units, 1)  # Repeat input for broadcasting
-        result_addition = x_for_broadcast + self.w  # Calculate addition of input and weights
-        trop_distance = reduce_sum(result_addition, axis=(self.axis_for_reduction)) - self.units*reduce_min(result_addition, axis=(self.axis_for_reduction)) + self.bias  # Calculate tropical distances with bias
-        return trop_distance
-
-    def get_config(self):
-        '''
-        Gets the configuration of the layer.
-
-        Returns
-        -------
-        config : dict
-            Configuration of the layer.
-        '''
-        config = {
-            'units': self.units,
-            'initializer_w': initializers.serialize(self.initializer_w),
-            'lam': self.lam
-        }
-        base_config = super(TropEmbedMaxMin, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
-
-    @classmethod
-    def from_config(cls, config):
-        '''
-        Creates a layer from its config.
-
-        Parameters
-        ----------
-        config : dict
-            Configuration of the layer.
-
-        Returns
-        -------
-        cls : TropEmbedMaxMin object
-            Instantiated TropEmbedMaxMin object with given configuration.
-        '''
-        return cls(**config)
-
 
 class TropConv2D(Layer):
     '''
     Custom TensorFlow layer implementing Tropical Convolution 2D.
     '''
 
-    def __init__(self, filters=64, window_size=[1, 3, 3, 1], strides=[1, 1, 1, 1], rates=[1, 1, 1, 1],
-                 padding='VALID', initializer_w=initializers.random_normal, lam=0.0, **kwargs):
+    def __init__(self, 
+                 filters=64, 
+                 window_size=[1, 3, 3, 1], 
+                 strides=[1, 1, 1, 1], 
+                 rates=[1, 1, 1, 1],
+                 padding='VALID', 
+                 initializer_w=initializers.random_normal, 
+                 lam=0.0, 
+                 **kwargs):
         '''
         Initializes the TropConv2D layer.
 
@@ -619,12 +368,13 @@ class TropConv2D(Layer):
         self.rates = rates
         self.padding = padding
         self.lam = lam
+        
 
     def build(self, input_shape):
         channels = input_shape[-1]  # Extract the last dimension from input_shape
         self.w = self.add_weight(shape=(1, 1, 1, self.window_size[1] * self.window_size[2] * channels, self.filters),
                                  initializer=self.initializer_w,
-                                 regularizer=TropicalRegularizer(lam=self.lam),
+                                 regularizer=TropRegIncreaseDistance(lam=self.lam),
                                  trainable=True)
         self.bias = self.add_weight(name='bias',
                                     shape=(self.filters,),
@@ -646,7 +396,10 @@ class TropConv2D(Layer):
         trop_conv_result : tensorflow tensor object
             Output tensor after applying Tropical Convolution 2D.
         '''
-        x_patches = extract_patches(images=x, sizes=self.window_size, strides=self.strides, rates=self.rates,
+        x_patches = extract_patches(images=x, 
+                                    sizes=self.window_size, 
+                                    strides=self.strides, 
+                                    rates=self.rates,
                                     padding=self.padding)  # Extract patches from input
         result_addition = expand_dims(x_patches, axis=-1) + self.w  # Calculate addition of patches and weights
         trop_conv_result = reduce_max(result_addition, axis=(3)) - reduce_min(result_addition, axis=(3)) + self.bias  # Compute tropical convolution
@@ -691,204 +444,47 @@ class TropConv2D(Layer):
         return cls(**config)
 
 
-class TropConv2DMax(Layer):
+class TropEmbedTop2(Layer): #UNUSED, WOULD NEED TO UPDATE IF USING, BUT KEEPING BECAUSE OF DIFFERENT TROPICAL METRIC 
     '''
-    Custom TensorFlow layer implementing Tropical Convolution 2D with maximum operation.
-    '''
-
-    def __init__(self, filters=64, window_size=[1, 3, 3, 1], strides=[1, 1, 1, 1], rates=[1, 1, 1, 1],
-                 padding='VALID', initializer_w=initializers.random_normal, lam=0.0):
-        '''
-        Initializes the TropConv2DMax layer.
-
-        Parameters
-        ----------
-        filters : int, optional
-            Number of filters (default is 64).
-        window_size : list, optional
-            Size of the sliding window for convolution (default is [1, 3, 3, 1]).
-        strides : list, optional
-            Stride of the convolution (default is [1, 1, 1, 1]).
-        rates : list, optional
-            Rate for dilated convolution (default is [1, 1, 1, 1]).
-        padding : str, optional
-            Type of padding (default is 'VALID').
-        initializer_w : initializer function, optional
-            Weight initializer function (default is random_normal).
-        lam : float, optional
-            Regularization parameter (default is 0.0).
-        '''
-        super(TropConv2DMax, self).__init__()
-        self.filters = filters
-        self.initializer_w = initializer_w
-        self.window_size = window_size
-        self.strides = strides
-        self.rates = rates
-        self.padding = padding
-        self.lam = lam
-
-    def build(self, input_shape):
-        channels = input_shape[-1]  # Extract the last dimension from input_shape
-        self.w = self.add_weight(shape=(1, 1, 1, self.window_size[1] * self.window_size[2] * channels, self.filters),
-                                 initializer=self.initializer_w,
-                                 regularizer=TropReg(lam=self.lam),
-                                 trainable=True)
-        self.bias = self.add_weight(name='bias',
-                                    shape=(self.filters,),
-                                    initializer="zeros",
-                                    trainable=True)
-        super(TropConv2DMax, self).build(input_shape)
-
-    def call(self, x):
-        '''
-        Performs the forward pass of the TropConv2DMax layer.
-
-        Parameters
-        ----------
-        x : tensorflow tensor object
-            Input tensor.
-
-        Returns
-        -------
-        trop_conv_result : tensorflow tensor object
-            Output tensor after applying Tropical Convolution 2D with maximum operation.
-        '''
-        x_patches = extract_patches(images=x, sizes=self.window_size, strides=self.strides, rates=self.rates,
-                                    padding=self.padding)  # Extract patches from input
-        result_addition = expand_dims(x_patches, axis=-1) + self.w  # Calculate addition of patches and weights
-        trop_conv_result = reduce_max(result_addition, axis=(3)) + self.bias  # Compute tropical convolution with maximum operation
-        return trop_conv_result
-
-    def get_config(self):
-        '''
-        Gets the configuration of the layer.
-
-        Returns
-        -------
-        config : dict
-            Configuration of the layer.
-        '''
-        config = {
-            'filters': self.filters,
-            'window_size': self.window_size,
-            'strides': self.strides,
-            'rates': self.rates,
-            'padding': self.padding,
-            'initializer_w': initializers.serialize(self.initializer_w),
-            'lam': self.lam
-        }
-        base_config = super(TropConv2DMax, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
-
-    @classmethod
-    def from_config(cls, config):
-        '''
-        Creates a layer from its config.
-
-        Parameters
-        ----------
-        config : dict
-            Configuration of the layer.
-
-        Returns
-        -------
-        cls : TropConv2DMax object
-            Instantiated TropConv2DMax object with given configuration.
-        '''
-        return cls(**config)
-
-
-class TropEmbedMaxMinLogits(Layer):
-    '''
-    Custom TensorFlow layer implementing Tropical Embedding for max-min logits.
+    Custom TensorFlow layer implementing Tropical Embedding for top 2 values.
     '''
 
-    def __init__(self, units=2, initializer_w=initializers.random_normal, lam=1.0, **kwargs):
+    def __init__(self, units=2, input_dim=3):
         '''
-        Initializes the TropEmbedMaxMinLogits layer.
+        Initializes the TropEmbedTop2 layer.
 
         Parameters
         ----------
         units : int, optional
             Number of output units (default is 2).
-        initializer_w : initializer function, optional
-            Weight initializer function (default is random_normal).
-        lam : float, optional
-            Regularization parameter (default is 1.0).
-        **kwargs : dict
-            Additional keyword arguments.
+        input_dim : int, optional
+            Dimension of input data (default is 3).
         '''
-        super(TropEmbedMaxMinLogits, self).__init__(**kwargs)
+        super(TropEmbedTop2, self).__init__()
+        self.w = self.add_weight(
+            shape=(units, input_dim),
+            initializer=initializers.RandomNormal(),
+            regularizer=TropRegIncreaseDistance(lam=0.01),
+            trainable=True
+        )
         self.units = units
-        self.initializer_w = initializer_w
-        self.lam = lam
+        self.input_dim = input_dim
 
-    def build(self, input_shape):
-        input_dim = input_shape[-1]  # Extract the last dimension from input_shape
-        self.w = self.add_weight(name='tropical_fw',
-                                 shape=(self.units, input_dim),
-                                 initializer=self.initializer_w,
-                                 regularizer=TropRegIncreaseDistance(lam=self.lam),
-                                 trainable=True)
-        self.bias = self.add_weight(name='bias',
-                                    shape=(self.units,),
-                                    initializer="zeros",
-                                    trainable=True)
-        super(TropEmbedMaxMinLogits, self).build(input_shape)
-
-    def call(self, x):
+    def call(self, inputs):
         '''
-        Performs the forward pass of the TropEmbedMaxMinLogits layer.
+        Performs the forward pass of the TropEmbedTop2 layer.
 
         Parameters
         ----------
-        x : tensorflow tensor object
+        inputs : tensorflow tensor object
             Input tensor.
 
         Returns
         -------
-        softmin_values : tensorflow tensor object
-            Output tensor after applying Tropical Embedding for max-min logits.
+        output : tensorflow tensor object
+            Output tensor after applying Tropical Embedding for top 2 values.
         '''
-        x_reshaped = reshape(x, [-1, 1, self.w.shape[-1]])  # Reshape input data
-        x_for_broadcast = repeat_elements(x_reshaped, self.units, 1)  # Repeat input for broadcasting
-        result_addition = x_for_broadcast + self.w  # Calculate addition of input and weights
-        axis_for_reduction = 2  # Define axis for reduction
-        trop_distance = reduce_max(result_addition, axis=(axis_for_reduction)) - reduce_min(result_addition, axis=(axis_for_reduction)) + self.bias  # Compute tropical distance with bias
-        negative_exponents = exp(-trop_distance)  # Compute negative exponents
-        softmin_values = negative_exponents / reduce_sum(negative_exponents, axis=-1, keepdims=True)  # Compute softmin values
-        return softmin_values
-
-    def get_config(self):
-        '''
-        Gets the configuration of the layer.
-
-        Returns
-        -------
-        config : dict
-            Configuration of the layer.
-        '''
-        config = {
-            'units': self.units,
-            'initializer_w': initializers.serialize(self.initializer_w),
-            'lam': self.lam
-        }
-        base_config = super(TropEmbedMaxMinLogits, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
-
-    @classmethod
-    def from_config(cls, config):
-        '''
-        Creates a layer from its config.
-
-        Parameters
-        ----------
-        config : dict
-            Configuration of the layer.
-
-        Returns
-        -------
-        cls : TropEmbedMaxMinLogits object
-            Instantiated TropEmbedMaxMinLogits object with given configuration.
-        '''
-        return cls(**config)
+        input_reshaped = reshape(inputs, [-1, 1, self.input_dim])  # Reshape input data
+        input_for_broadcast = repeat_elements(input_reshaped, self.units, 1)  # Repeat input for broadcasting
+        values, _ = top_k(input_for_broadcast + self.w, 2)  # Calculate top 2 values
+        return values[:, :, 0] - values[:, :, 1]  # Compute symmetric tropical distance

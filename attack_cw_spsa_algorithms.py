@@ -8,9 +8,8 @@ import time
 from absl import app
 
 from functions.utils import load_attack_settings, l2, save_location_attack_results
-from edited_cleverhans.edited_carlini_wagner_l2 import carlini_wagner_l2
-#from cleverhans.carlini_wagner_l2 import carlini_wagner_l2
-from edited_cleverhans.edited_spsa import spsa
+from updated_cleverhans.updated_carlini_wagner_l2 import carlini_wagner_l2
+from updated_cleverhans.updated_spsa import spsa
 
 def main(_):
     batch_chunk = int(sys.argv[1])

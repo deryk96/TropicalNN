@@ -66,7 +66,6 @@ def main(_):
                                                      y, 
                                                      steps = 100, 
                                                      epsilon = eps_l1, 
-                                                     eps_iter = 0.01, 
                                                      loss_object = loss_object, 
                                                      x_min = -1.0, 
                                                      x_max = 1.0,
