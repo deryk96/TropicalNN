@@ -4,7 +4,6 @@ master_models/
 new_master_models/
 output_data/
 batch_print_outputs/
-countour_data_10_FW/
 experiments/
 __pycache__/
 images_figures/
