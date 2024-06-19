@@ -16,4 +16,3 @@ imagnetPreProcessing/
 *cw_experiment.py
 master_models
 *.txt
-test*

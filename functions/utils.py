@@ -1,8 +1,67 @@
 import matplotlib.pyplot as plt
 import tensorflow as tf
 import os
-from functions.load_data import ld_mnist, ld_svhn, ld_cifar10, ld_cifar100
 from functions.models import ResNet50Model, ModifiedLeNet5, LeNet5, VGG16Model, MobileNetModel, EfficientNetB4Model, AlexNetModel, MMRModel
+from tensorflow import cast, float32, reduce_any
+import tensorflow_datasets as tfds
+from easydict import EasyDict
+
+def convert_types(image, label):
+    """Convert image types and normalize to [-1, 1]."""
+    image = cast(image, float32)
+    image /= 127.5
+    image -= 1.0
+    return image, label
+
+def filter_classes(dataset, classes):
+    """Filter the dataset to include only specified classes."""
+    return dataset.filter(lambda image, label: reduce_any([label == cls for cls in classes]))
+
+def ld_mnist(batch_size=128, classes=None):
+    """Load MNIST training and test data and filter by specified classes."""
+    dataset, info = tfds.load("mnist", with_info=True, as_supervised=True)
+
+    mnist_train, mnist_test = dataset["train"], dataset["test"]
+    
+    # Apply class filtering if classes are specified
+    if classes is not None:
+        mnist_train = filter_classes(mnist_train, classes)
+        mnist_test = filter_classes(mnist_test, classes)
+    
+    mnist_train = mnist_train.map(convert_types).shuffle(10000).batch(batch_size)
+    mnist_test = mnist_test.map(convert_types).batch(batch_size)
+
+    return EasyDict(train=mnist_train, test=mnist_test), info
+
+def ld_svhn(batch_size = 128):
+    """Load SVHN training and test data."""
+    dataset, info = tfds.load("svhn_cropped", with_info=True, as_supervised=True)
+
+    svhn_train, svhn_test = dataset["train"], dataset["test"]
+    svhn_train = svhn_train.map(convert_types).shuffle(10000).batch(batch_size)
+    svhn_test = svhn_test.map(convert_types).batch(batch_size)
+
+    return EasyDict(train=svhn_train, test=svhn_test), info
+
+def ld_cifar10(batch_size = 128):
+    """Load CIFAR-10 training and test data."""
+    dataset, info = tfds.load("cifar10", with_info=True, as_supervised=True)
+
+    cifar10_train, cifar10_test = dataset["train"], dataset["test"]
+    cifar10_train = cifar10_train.map(convert_types).shuffle(10000).batch(batch_size)
+    cifar10_test = cifar10_test.map(convert_types).batch(batch_size)
+
+    return EasyDict(train=cifar10_train, test=cifar10_test), info
+
+def ld_cifar100(batch_size = 128):
+    """Load CIFAR-10 training and test data."""
+    dataset, info = tfds.load("cifar100", with_info=True, as_supervised=True)
+
+    cifar100_train, cifar100_test = dataset["train"], dataset["test"]
+    cifar100_train = cifar100_train.map(convert_types).shuffle(10000).batch(batch_size)
+    cifar100_test = cifar100_test.map(convert_types).batch(batch_size)
+
+    return EasyDict(train=cifar100_train, test=cifar100_test), info
 
 def l2(x, y):
     return tf.sqrt(tf.reduce_sum(tf.square(x - y), list(range(1, len(x.shape)))))
@@ -122,55 +181,11 @@ def load_models(config):
                         models[f"{dataset_name}_{base_model}_{top_layer}_{adv_train}"] = model_choice(dataset_name, base_model, top_layer, adv_train)
     return models
                                                                                     
-
-
-def load_build_settings(dataset_name, base_model_index, batch_size):
-    dataset_category, eps, input_elements, data, info, input_shape, num_classes = load_data(dataset_name, batch_size)
-
-    # -- setup the models --   
-    if dataset_category == 0:
-        if base_model_index == 0:
-            models = {'ModifiedLeNet5_relu': ModifiedLeNet5(num_classes=num_classes, top="relu"),
-                    'ModifiedLeNet5_trop': ModifiedLeNet5(num_classes=num_classes, top="trop"),
-                    'ModifiedLeNet5_maxout': ModifiedLeNet5(num_classes=num_classes, top="maxout")
-                    }
-        elif base_model_index == 1:
-            models = {'LeNet5_relu': LeNet5(num_classes=num_classes, top="relu"),
-                    'LeNet5_trop': LeNet5(num_classes=num_classes, top="trop"),
-                    'LeNet5_maxout': LeNet5(num_classes=num_classes, top="maxout")
-                    }
-        elif base_model_index == 2:
-            models = {'MobileNet_relu': MobileNetModel(num_classes=num_classes, top="relu", input_shape=input_shape),
-                    'MobileNet_trop': MobileNetModel(num_classes=num_classes, top="trop", input_shape=input_shape),
-                    'MobileNet_maxout': MobileNetModel(num_classes=num_classes, top="maxout", input_shape=input_shape)
-                    }
-        else:
-            raise ValueError("Invalid base_model_index provided. Should be either 0, 1, or 2")
-    elif dataset_category == 1:
-        if base_model_index == 0:
-            models = {'ResNet50_relu': ResNet50Model(num_classes=num_classes, top="relu", input_shape=input_shape),
-                    'ResNet50_trop': ResNet50Model(num_classes=num_classes, top="trop", input_shape=input_shape),
-                    'ResNet50_maxout': ResNet50Model(num_classes=num_classes, top="maxout", input_shape=input_shape)
-                    }
-        elif base_model_index == 1:
-            models = {'VGG16_relu': VGG16Model(num_classes=num_classes, top="relu", input_shape=input_shape),
-                    'VGG16_trop': VGG16Model(num_classes=num_classes, top="trop", input_shape=input_shape),
-                    'VGG16_maxout': VGG16Model(num_classes=num_classes, top="maxout", input_shape=input_shape)
-                    }
-        elif base_model_index == 2:
-            models = {'EfficientNetB4_relu': EfficientNetB4Model(num_classes=num_classes, top="relu", input_shape=input_shape),
-                    'EfficientNetB4_trop': EfficientNetB4Model(num_classes=num_classes, top="trop", input_shape=input_shape),
-                    'EfficientNetB4_maxout': EfficientNetB4Model(num_classes=num_classes, top="maxout", input_shape=input_shape)
-                    }
-        else:
-            raise ValueError("Invalid base_model_index provided. Should be either 0, 1, or 2")
-    return input_elements, eps, data, info, models
-
 def find_directories_with_keyphrase(root_dir, dataset_name):
     valid_datasets = ["mnist", "svhn", "cifar10", "cifar100"]
     valid_base_models = ["LeNet5", "ModifiedLeNet5", "MobileNet", "ResNet50", "VGG16", "EfficientNetB4"]
     valid_top_layers = ["maxout", "relu", "trop", "MMRModel"]
-    models_to_attack = {#mnist_ModifiedLeNet_MMRModel_no
+    models_to_attack = {
                         "mnist" : {"LeNet5" :           {"maxout" : {"yes" : 0, "no" : 0},
                                                         "relu" :    {"yes" : 0, "no" : 0},
                                                         "trop" :    {"yes" : 0, "no" : 0}},
@@ -234,9 +249,7 @@ def find_directories_with_keyphrase(root_dir, dataset_name):
 
 def load_attack_settings(dataset_name, batch_size, root_dir):
     _, eps, _, data, info, _, _ = load_data(dataset_name, batch_size)
-
     model_paths = find_directories_with_keyphrase(root_dir, dataset_name)
-
     return eps, data, info, model_paths
 
 

@@ -128,7 +128,7 @@ def main(_):
             print("loss", train_loss.result(), "acc",  train_acc.result())
             
             # --- check validation set for improvement --- 
-            '''for (x_val, y_val) in data_val:
+            for (x_val, y_val) in data_val:
                 predictions = model(x_val, training=False)
                 validation_acc.update_state(y_val, predictions)
             val_accuracy = validation_acc.result().numpy()
@@ -139,7 +139,7 @@ def main(_):
                 patience_counter += 1 
                 
             print(f'---- epoch {epoch}, Validation Accuracy {val_accuracy}, Best: {best_val_accuracy} ----') #Validation Loss: {val_loss}, Best: {best_val_loss},
-            '''
+            
             # --- kill training if conditions are met
             if patience_counter >= early_stopping_patience and epoch >= 19:
                 break

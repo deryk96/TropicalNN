@@ -100,14 +100,13 @@ def main(_):
             non_zero_mask = tf.not_equal(l2_x_cw, 0.0)
             non_zero_values = tf.boolean_mask(l2_x_cw, non_zero_mask)
             
-            l2_x_cw_avgs.append(tf.reduce_sum(non_zero_values).numpy().item())
             # Check if non_zero_values is empty
-            #if tf.size(non_zero_values) == 0:
+            if tf.size(non_zero_values) == 0:
                 # Append 0 when there are no non-zero values
-                #l2_x_cw_avgs.append(0.0)
-            #else:
+                l2_x_cw_avgs.append(0.0)
+            else:
                 # Otherwise, calculate the mean and append it
-                #l2_x_cw_avgs.append(tf.reduce_sum(non_zero_values).numpy().item())
+                l2_x_cw_avgs.append(tf.reduce_sum(non_zero_values).numpy().item())
             y_pred_cw = model(x_cw, training=False)
             test_acc_cw(y, y_pred_cw)
             time_2 = time.time()
@@ -119,8 +118,6 @@ def main(_):
             y_pred_spsa_list = []
 
             for i in range(x.shape[0]):
-                #if (i%1)==0:
-                    #print("spsa", i, time.time())
                 x_spsa_single = spsa(model, 
                                       x=x[i:i+1], 
                                       y=y[i], 

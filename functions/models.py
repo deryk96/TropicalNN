@@ -13,10 +13,9 @@ This file contains a collection of Tensorflow models that utilize many customize
 from custom_layers.tropical_layers import TropEmbed, ChangeSignLayer
 from tensorflow import reduce_max, reshape, shape, concat
 from tensorflow.keras import Sequential, Model, initializers
-from tensorflow.keras.layers import Dense, MaxPooling2D, Flatten, Conv2D, Dropout, GlobalAveragePooling2D, Layer, AveragePooling2D, DepthwiseConv2D, ReLU, BatchNormalization
-from tensorflow.keras.applications import ResNet50, VGG16, MobileNet, EfficientNetB0, VGG19
+from tensorflow.keras.layers import Dense, MaxPooling2D, Flatten, Conv2D, Dropout, GlobalAveragePooling2D, Layer, AveragePooling2D
+from tensorflow.keras.applications import ResNet50, VGG16, MobileNet, EfficientNetB0
 from tensorflow.keras.models import Sequential, Model
-from tensorflow.keras.utils import serialize_keras_object, deserialize_keras_object
 
 
 class Maxout(Layer):

@@ -5,26 +5,29 @@ import numpy as np
 import tensorflow as tf
 import os
 
-from absl import app, flags
+from absl import app
 from functions.attacks import l1_projected_gradient_descent, l2_projected_gradient_descent
-from functions.utils import load_build_settings, load_models, load_data, find_model
+from functions.utils import load_models, load_data, find_model
 from cleverhans.tf2.attacks.projected_gradient_descent import projected_gradient_descent
-
-#FLAGS = flags.FLAGS
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '0'
-#tf.debugging.set_log_device_placement(True)
-#tf.config.experimental.set_visible_devices('GPU:0', 'GPU')
 
 def main(_):
 
-    model_num = 0#sys.argv[1]
-    
+    model_num = sys.argv[1]
+    lr = float(sys.argv[2])
+    optimizer_name = sys.argv[3]
+
     if model_num == "all":
         boo_run_all = True
     else:
         boo_run_all = False
         model_num = int(model_num)
         print(model_num, type(model_num))
+
+    if optimizer_name == "adam":
+        optimizer = tf.optimizers.Adam(learning_rate = lr)
+    elif optimizer_name == "sgd":
+        optimizer = tf.optimizers.SGD(learning_rate = lr)#, momentum = 0.5)
+
     dict_settings = {
         "mnist" : {"LeNet5" :           {"maxout" : {"yes" : 0, "no" : 0},
                                         "relu" :    {"yes" : 0, "no" : 0},
@@ -38,38 +41,39 @@ def main(_):
                     "ModifiedLeNet5" :  {"maxout" : {"yes" : 0, "no" : 0}, 
                                         "relu" :    {"yes" : 0, "no" : 0},
                                         "trop" :    {"yes" : 0, "no" : 0}},
-                    "MobileNet" :       {"maxout" : {"yes" : 0, "no" : 0},##<
+                    "MobileNet" :       {"maxout" : {"yes" : 0, "no" : 0},
                                         "relu" :    {"yes" : 0, "no" : 0},
                                         "trop" :    {"yes" : 0, "no" : 0}}},
-        "cifar10" : {"ResNet50" :       {"trop":    {"yes" : 0, "no" : 0}, #here
-                                        "relu" :    {"yes" : 0, "no" : 0}, #here
-                                        "maxout" :  {"yes" : 0, "no" : 0}},#here
-                    "VGG16" :           {"maxout" : {"yes" : 0, "no" : 0}, #here
-                                        "relu" :    {"yes" : 0, "no" : 0}, #here
-                                        "trop" :    {"yes" : 0, "no" : 0}},#here
+        "cifar10" : {"ResNet50" :       {"trop":    {"yes" : 0, "no" : 0}, 
+                                        "relu" :    {"yes" : 0, "no" : 0}, 
+                                        "maxout" :  {"yes" : 0, "no" : 0}},
+                    "VGG16" :           {"maxout" : {"yes" : 0, "no" : 0}, 
+                                        "relu" :    {"yes" : 0, "no" : 0}, 
+                                        "trop" :    {"yes" : 0, "no" : 0}},
                     "EfficientNetB4" :  {"maxout" : {"yes" : 0, "no" : 0},
                                         "relu" :    {"yes" : 0, "no" : 0},
                                         "trop" :    {"yes" : 0, "no" : 0}}},
-        "cifar100" : {"ResNet50" :      {"maxout" : {"yes" : 0, "no" : 0}, #here
-                                        "relu" :    {"yes" : 0, "no" : 0}, #here
-                                        "trop" :    {"yes" : 0, "no" : 0}},#here
-                    "VGG16" :           {"maxout" : {"yes" : 0, "no" : 0}, #here
-                                        "relu" :    {"yes" : 0, "no" : 0}, #here
-                                        "trop" :    {"yes" : 0, "no" : 0}},#here
+        "cifar100" : {"ResNet50" :      {"maxout" : {"yes" : 0, "no" : 0}, 
+                                        "relu" :    {"yes" : 0, "no" : 0}, 
+                                        "trop" :    {"yes" : 0, "no" : 0}},
+                    "VGG16" :           {"maxout" : {"yes" : 0, "no" : 0}, 
+                                        "relu" :    {"yes" : 0, "no" : 0}, 
+                                        "trop" :    {"yes" : 0, "no" : 0}},
                     "EfficientNetB4" :  {"maxout" : {"yes" : 0, "no" : 0},
                                         "relu" :    {"yes" : 0, "no" : 0},
                                         "trop" :    {"yes" : 0, "no" : 0}}},
     }
 
     models = load_models(config=dict_settings)
-    old_dataset_name = "not set"
-    model_counter = -1
-    batch_size = 512
-    eps_iter_portion = 0.2
-    att_steps = 10
+    old_dataset_name = "not set" # arbitrary
+    model_counter = -1 # Unsmart way to start a counter
+    batch_size = 128 # Training batch size that is.
+    eps_iter_portion = 0.2 # Scale of epsilon iterations for attack steps if adversarially training
+    att_steps = 10 # Number of PGD/SLIDE attack steps if adversarially training
     early_stopping_patience = 5  # Number of epochs to wait for improvement
     min_delta = 0.001  # Minimum change to qualify as an improvement
-    nb_epochs = 300
+    min_epochs = 10
+    max_epochs = 300 # Max epochs
 
     for name, model in models.items():
         # --- determine if we are running a given model (for use in batch runs) --- 
@@ -108,17 +112,13 @@ def main(_):
         boo_adv_train = False
         boo_update_weights = False
         if (top_layer == "maxout" and adv_train == "no") or (top_layer == "trop" and adv_train == "no"):
-            boo_update_weights = False ### CHANGE BACK TO TRUE
+            boo_update_weights = True 
         if  (adv_train == "no"): 
             boo_adv_train = False
         else:
             boo_adv_train = True
 
-        #boo_update_weights = True
         # --- initiate tensorflow objects ---
-        lr = 0.5
-        #optimizer = tf.optimizers.Adam(learning_rate=lr)#, weight_decay=0.0001, use_ema=True, ema_momentum=0.9)
-        optimizer = tf.optimizers.SGD(learning_rate = lr)#, momentum = 0.5)
         loss_object = tf.losses.SparseCategoricalCrossentropy(from_logits=True)#, reduction=tf.keras.losses.Reduction.NONE)
         train_loss = tf.metrics.Mean(name="train_loss")
         train_acc = tf.metrics.SparseCategoricalAccuracy()
@@ -136,8 +136,7 @@ def main(_):
             train_acc(y, predictions)
 
         start = time.time()
-        boo_temporary = True ### get rid of this young man
-        for epoch in range(nb_epochs):
+        for epoch in range(max_epochs):
             # --- initialize some tracking variables ---
             validation_acc.reset_state() 
             progress_bar_train = tf.keras.utils.Progbar(info.splits['train'].num_examples - val_size*batch_size)
@@ -198,35 +197,6 @@ def main(_):
                         new_layer.set_weights(layer.get_weights())
                     boo_update_weights = False
                 
-                if epoch == 0 and boo_temporary == True:
-                    ####### SETTING UP SMALL SHIT ############
-                    tropical_layer = model.top_layer.get_layer(name="tropical")
-                    tf.print(tropical_layer.w)
-                    corners = 60
-                    cross = 25
-                    desired_weights = [
-                        tf.constant([
-                            [4*cross, 0, cross], 
-                            [-4*cross, 0, cross], 
-                            [-4*cross, 0, -cross], 
-                            [4*cross, 0, -cross], 
-                            [corners, 0, corners], 
-                            [-corners, 0, corners], 
-                            [corners, 0, -corners], 
-                            [-corners, 0, -corners], 
-                            [0, 0, corners + 10],
-                            [0, 0, -corners - 10]
-                        ], dtype=tf.float32),
-                        tf.constant([0.0, 0.0, 0.0,0.0, 0.0, 0.0,0.0, 0.0, 0.0,0.0], dtype=tf.float32)
-
-                    ]
-                    tropical_layer.set_weights(desired_weights)
-                    tropical_layer.w.trainable = False
-                    tropical_layer.bias.trainable = False
-                    boo_temporary = False
-                    tf.print(tropical_layer.w)
-                elif epoch == 2:
-                    tf.print(tropical_layer.w)
                 # --- update progress bar ---
                 simple_counter += 1
                 if simple_counter == progress_count:
@@ -247,7 +217,7 @@ def main(_):
             print(f'---- epoch {epoch}, Validation Accuracy {val_accuracy}, Best: {best_val_accuracy} ----') #Validation Loss: {val_loss}, Best: {best_val_loss},
             
             # --- kill training if conditions are met
-            if patience_counter >= early_stopping_patience and epoch >= 299:
+            if patience_counter >= early_stopping_patience and epoch >= min_epochs - 1:
                 patience_counter = 0
                 current_lr = optimizer.learning_rate.numpy()
                 optimizer.learning_rate.assign(current_lr/10)
