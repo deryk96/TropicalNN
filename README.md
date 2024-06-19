@@ -26,11 +26,11 @@ This README is designed to provide and overview of this repo and basic instructi
 
 ## Required packages
 All code was built and run in a python 3.11.2 environment. Below are dependencies for all files that are outside basic packages like numpy and what not.
-pip install tensorflow
-pip install tensorrt --extra-index-url https://pypi.nvidia.com
-pip install cleverhans
-pip install tensorflow_datasets
-pip install easydict
+
+- pip install tensorflow
+- pip install cleverhans
+- pip install tensorflow_datasets
+- pip install easydict
 
 ## Experiment Overview
 
