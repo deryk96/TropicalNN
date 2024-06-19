@@ -26,7 +26,7 @@ import pickle
 import os
 import struct
 from tensorflow.keras.utils import to_categorical
-from tensorflow import cast, float32
+from tensorflow import cast, float32, reduce_any
 import tensorflow_datasets as tfds
 from easydict import EasyDict
 from scipy.io import loadmat
@@ -70,6 +70,27 @@ def convert_types(image, label):
     image -= 1.0
     return image, label
 
+def filter_classes(dataset, classes):
+    """Filter the dataset to include only specified classes."""
+    return dataset.filter(lambda image, label: reduce_any([label == cls for cls in classes]))
+
+def ld_mnist(batch_size=128, classes=None):
+    """Load MNIST training and test data and filter by specified classes."""
+    dataset, info = tfds.load("mnist", with_info=True, as_supervised=True)
+
+    mnist_train, mnist_test = dataset["train"], dataset["test"]
+    
+    # Apply class filtering if classes are specified
+    if classes is not None:
+        mnist_train = filter_classes(mnist_train, classes)
+        mnist_test = filter_classes(mnist_test, classes)
+    
+    mnist_train = mnist_train.map(convert_types).shuffle(10000).batch(batch_size)
+    mnist_test = mnist_test.map(convert_types).batch(batch_size)
+
+    return EasyDict(train=mnist_train, test=mnist_test), info
+
+'''
 def ld_mnist(batch_size = 128):
     """Load MNIST training and test data."""
     dataset, info = tfds.load("mnist", with_info=True, as_supervised=True)
@@ -79,7 +100,7 @@ def ld_mnist(batch_size = 128):
     mnist_test = mnist_test.map(convert_types).batch(batch_size)
 
     return EasyDict(train=mnist_train, test=mnist_test), info
-
+'''
 def ld_svhn(batch_size = 128):
     """Load SVHN training and test data."""
     dataset, info = tfds.load("svhn_cropped", with_info=True, as_supervised=True)

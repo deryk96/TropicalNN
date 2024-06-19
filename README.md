@@ -1,6 +1,6 @@
 # Tropical CNNs
 
-This README is designed to provide basic instructions needed to run the experiments we conducted for the results reported in the paper entitled "Adversarially Robust Neural Networks via Tropical Geometry".
+This README is designed to provide basic instructions needed to run the experiments we conducted for the results reported in the paper entitled ["Tropical Decision Boundaries for Neural Networks Are Robust Against Adversarial Attacks"](https://arxiv.org/abs/2402.00576)
 
 ## Step 1. Build the models.
 Main file used is cleverhans_model_builds.py

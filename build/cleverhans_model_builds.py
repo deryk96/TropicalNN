@@ -17,7 +17,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '0'
 
 def main(_):
 
-    model_num = sys.argv[1]
+    model_num = 0#sys.argv[1]
     
     if model_num == "all":
         boo_run_all = True
@@ -31,7 +31,7 @@ def main(_):
                                         "trop" :    {"yes" : 0, "no" : 0}},
                     "ModifiedLeNet5" :  {"maxout" : {"yes" : 0, "no" : 0},
                                         "relu" :    {"yes" : 0, "no" : 0},
-                                        "trop" :    {"yes" : 0, "no" : 0}}},
+                                        "trop" :    {"yes" : 0, "no" : 1}}},
         "svhn" :  {"LeNet5" :           {"maxout" : {"yes" : 0, "no" : 0},
                                         "relu" :    {"yes" : 0, "no" : 0},
                                         "trop" :    {"yes" : 0, "no" : 0}},
@@ -57,7 +57,7 @@ def main(_):
                                         "relu" :    {"yes" : 0, "no" : 0}, #here
                                         "trop" :    {"yes" : 0, "no" : 0}},#here
                     "EfficientNetB4" :  {"maxout" : {"yes" : 0, "no" : 0},
-                                        "relu" :    {"yes" : 0, "no" : 1},
+                                        "relu" :    {"yes" : 0, "no" : 0},
                                         "trop" :    {"yes" : 0, "no" : 0}}},
     }
 
@@ -73,6 +73,7 @@ def main(_):
 
     for name, model in models.items():
         # --- determine if we are running a given model (for use in batch runs) --- 
+        print("model name", name)
         model_counter += 1
         if boo_run_all == False:
             if model_num != model_counter:
@@ -107,17 +108,17 @@ def main(_):
         boo_adv_train = False
         boo_update_weights = False
         if (top_layer == "maxout" and adv_train == "no") or (top_layer == "trop" and adv_train == "no"):
-            boo_update_weights = True
+            boo_update_weights = False ### CHANGE BACK TO TRUE
         if  (adv_train == "no"): 
             boo_adv_train = False
         else:
             boo_adv_train = True
-            
+
         #boo_update_weights = True
         # --- initiate tensorflow objects ---
-        lr = 0.1
+        lr = 0.5
         #optimizer = tf.optimizers.Adam(learning_rate=lr)#, weight_decay=0.0001, use_ema=True, ema_momentum=0.9)
-        optimizer = tf.optimizers.SGD(learning_rate = lr, momentum = 0.90)
+        optimizer = tf.optimizers.SGD(learning_rate = lr)#, momentum = 0.5)
         loss_object = tf.losses.SparseCategoricalCrossentropy(from_logits=True)#, reduction=tf.keras.losses.Reduction.NONE)
         train_loss = tf.metrics.Mean(name="train_loss")
         train_acc = tf.metrics.SparseCategoricalAccuracy()
@@ -135,7 +136,7 @@ def main(_):
             train_acc(y, predictions)
 
         start = time.time()
-        
+        boo_temporary = True ### get rid of this young man
         for epoch in range(nb_epochs):
             # --- initialize some tracking variables ---
             validation_acc.reset_state() 
@@ -197,6 +198,35 @@ def main(_):
                         new_layer.set_weights(layer.get_weights())
                     boo_update_weights = False
                 
+                if epoch == 0 and boo_temporary == True:
+                    ####### SETTING UP SMALL SHIT ############
+                    tropical_layer = model.top_layer.get_layer(name="tropical")
+                    tf.print(tropical_layer.w)
+                    corners = 60
+                    cross = 25
+                    desired_weights = [
+                        tf.constant([
+                            [4*cross, 0, cross], 
+                            [-4*cross, 0, cross], 
+                            [-4*cross, 0, -cross], 
+                            [4*cross, 0, -cross], 
+                            [corners, 0, corners], 
+                            [-corners, 0, corners], 
+                            [corners, 0, -corners], 
+                            [-corners, 0, -corners], 
+                            [0, 0, corners + 10],
+                            [0, 0, -corners - 10]
+                        ], dtype=tf.float32),
+                        tf.constant([0.0, 0.0, 0.0,0.0, 0.0, 0.0,0.0, 0.0, 0.0,0.0], dtype=tf.float32)
+
+                    ]
+                    tropical_layer.set_weights(desired_weights)
+                    tropical_layer.w.trainable = False
+                    tropical_layer.bias.trainable = False
+                    boo_temporary = False
+                    tf.print(tropical_layer.w)
+                elif epoch == 2:
+                    tf.print(tropical_layer.w)
                 # --- update progress bar ---
                 simple_counter += 1
                 if simple_counter == progress_count:

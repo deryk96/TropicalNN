@@ -17,7 +17,7 @@ Functions:
 - trop_conv3layer_manyMaxLogits
 '''
 
-from custom_layers.tropical_layers import TropEmbedMaxMin, ChangeSignLayer
+from custom_layers.tropical_layers import TropEmbedMaxMin, ChangeSignLayer, TropAsymmetricMax, TropAsymmetricMin
 from tensorflow import reduce_max, reshape, shape, concat
 from tensorflow.keras import Sequential, Model, initializers
 from tensorflow.keras.layers import Dense, MaxPooling2D, Flatten, Conv2D, Dropout, GlobalAveragePooling2D, Layer, AveragePooling2D, DepthwiseConv2D, ReLU, BatchNormalization
@@ -53,7 +53,7 @@ class CustomModelClass(Model):
     def __init__(self, 
                  num_classes, 
                  top, 
-                 initializer=initializers.RandomNormal(mean=0, stddev=0.001, seed=0), 
+                 initializer=initializers.RandomNormal(mean=0., stddev=2., seed=0), 
                  num_maxout_neurons = 64, 
                  dropout_rate = 0.5,
                  lam = 0,
@@ -77,6 +77,12 @@ class CustomModelClass(Model):
         elif top == "maxout":
             self._build_maxout()
             self.top_processor = self.maxout_top
+        elif top == "tropAsymMax":
+            self._build_trop_asym_max()
+            self.top_processor = self.simple_top
+        elif top == "tropAsymMin":
+            self._build_trop_asym_min()
+            self.top_processor = self.simple_top
         else:
             raise ValueError("Invalid top layer specified")
 
@@ -88,8 +94,22 @@ class CustomModelClass(Model):
 
     def _build_trop(self):
         self.top_layer = Sequential([
-            Dense(256, activation="relu", name="last_fc"),
-            TropEmbedMaxMin(self.num_classes, initializer_w=self.initializer, lam=self.lam),
+            Dense(3, activation="relu", name="last_fc"),
+            TropEmbedMaxMin(self.num_classes, initializer_w=self.initializer, lam=self.lam, name="tropical"),
+            ChangeSignLayer(),
+        ])
+    
+    def _build_trop_asym_max(self):
+        self.top_layer = Sequential([
+            #Dense(64, activation="relu", name="last_fc"),
+            TropAsymmetricMax(self.num_classes, initializer_w=self.initializer, lam=self.lam, name="tropical"),
+            ChangeSignLayer(),
+        ])
+
+    def _build_trop_asym_min(self):
+        self.top_layer = Sequential([
+            #Dense(64, activation="relu", name="last_fc"),
+            TropAsymmetricMin(self.num_classes, initializer_w=self.initializer, lam=self.lam, name="tropical"),
             ChangeSignLayer(),
         ])
 

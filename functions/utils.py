@@ -31,13 +31,13 @@ def plot_images_in_grid(list_of_xs, row_labels, col_labels, save_path, input_ele
     plt.close()
 
 
-def load_data(dataset_name, batch_size):
+def load_data(dataset_name, batch_size, classes = None):
     # -- load data and set epsilon --
     if dataset_name == "mnist":
         dataset_category = 0
         eps = 0.2
         input_elements = 28*28*1
-        data, info = ld_mnist(batch_size=batch_size)
+        data, info = ld_mnist(batch_size=batch_size, classes=classes)
         num_classes = 10
         input_shape = (28,28,1)
     elif dataset_name == "svhn":
