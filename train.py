@@ -277,7 +277,7 @@ def main(_):
                   f"Training Accuracy: {train_accuracy:.4f}")
 
             # Check validation set for improvement
-            model.eval()
+            model.eval()  # Set model in eval mode
             correct = 0
             total = 0
             with torch.no_grad():
@@ -301,7 +301,7 @@ def main(_):
             # Kill training if conditions are met
             if patience_counter >= early_stopping_patience and epoch >= min_epochs - 1:
                 lr /= 10
-                optiizer = optimizer_class(model.parameters(), lr=lr)
+                optimizer = optimizer_class(model.parameters(), lr=lr)
                 lr_reduced_counter += 1
                 patience_counter = 0
                 if lr_reduced_counter > 3:
