@@ -19,17 +19,22 @@ Classes:
 - TropEmbedTop2 : Custom TensorFlow layer implementing Tropical Embedding for top 2 distances.
 '''
 
-from tensorflow import reshape, expand_dims, reduce_max ,reduce_min,reduce_sum, transpose, shape, ones, bool, exp, boolean_mask, add, constant
-from tensorflow.math import top_k, logical_not, scalar_mul
-from tensorflow.keras.layers import Layer
-from tensorflow.keras.backend import repeat_elements
-from tensorflow.keras import initializers, regularizers
-from tensorflow.image import extract_patches
-from tensorflow.linalg import band_part
+# TODO: Delete once works
+# from tensorflow import reshape, expand_dims, reduce_max ,reduce_min,reduce_sum, transpose, shape, ones, bool, exp, boolean_mask, add, constant
+# from tensorflow.math import top_k, logical_not, scalar_mul
+# from tensorflow.keras.layers import Layer
+# from tensorflow.keras.backend import repeat_elements
+# from tensorflow.keras import initializers, regularizers
+# from tensorflow.image import extract_patches
+# from tensorflow.linalg import band_part
 
-class ChangeSignLayer(Layer):
+# PyTorch imports
+import torch
+import torch.nn as nn
+
+class ChangeSignLayer(nn.Module):
     '''
-    Custom TensorFlow layer to change the sign of the input tensor.
+    Custom PyTorch layer to change the sign of the input tensor.
     '''
 
     def __init__(self, 
@@ -48,26 +53,28 @@ class ChangeSignLayer(Layer):
         self.constand_to_add = constant_to_add
         self.multiplier = multiplier
 
-    def call(self, inputs):
+    # def call(self, inputs):
+    def forward(self, inputs):
         '''
         Performs the forward pass of the layer.
 
         Parameters
         ----------
-        inputs : tensorflow tensor object
+        inputs : PyTorch tensor object
             Input tensor to change the sign.
 
         Returns
         -------
-        output : tensorflow tensor object
+        output : PyTorch tensor object
             Output tensor with signs changed.
         '''
-        return add(constant(self.constand_to_add), scalar_mul(self.multiplier, inputs))# Change the sign of the input tensor by multiplying with -1
+        # return add(constant(self.constand_to_add), scalar_mul(self.multiplier, inputs))# Change the sign of the input tensor by multiplying with -1
+        return self.constand_to_add + self.multiplier * inputs
     
 
-class SoftminLayer(Layer):
+class SoftminLayer(nn.Module):
     '''
-    Custom TensorFlow layer implementing the Softmin activation function.
+    Custom PyTorch layer implementing the Softmin activation function.
     '''
 
     def __init__(self, **kwargs):
@@ -77,31 +84,32 @@ class SoftminLayer(Layer):
         Parameters
         ----------
         **kwargs : dict
-            Additional keyword arguments for the Layer superclass.
+            Additional keyword arguments for the Module superclass.
         '''
-        super(SoftminLayer, self).__init__(**kwargs)  # Initialize the Layer superclass
+        super(SoftminLayer, self).__init__(**kwargs)
 
-    def call(self, inputs):
+    # def call(self, inputs):
+    def forward(self, inputs):
         '''
         Performs the forward pass of the SoftminLayer.
 
         Parameters
         ----------
-        inputs : tensorflow tensor object
+        inputs : PyTorch tensor object
             Input tensor.
 
         Returns
         -------
-        output : tensorflow tensor object
+        output : PyTorch tensor object
             Output tensor after applying the Softmin activation.
         '''
-        negative_exponents = exp(-inputs)
-        return negative_exponents / reduce_sum(negative_exponents, axis=-1, keepdims=True)
+        negative_exponents = torch.exp(-inputs)
+        return negative_exponents / torch.sum(negative_exponents, dim=-1, keepdim=True)
 
 
-class TropRegIncreaseDistance(regularizers.Regularizer):
+class TropRegIncreaseDistance:
     '''
-    Custom TensorFlow regularizer implementing Tropical regularization
+    Custom PyTorch regularizer implementing Tropical regularization
     to increase distances between weights in a layer. Penalizes weights 
     that are close to one another. Serves to "spread" the weights out in 
     an attempt to create a set of points that can more robustly define 
@@ -119,13 +127,13 @@ class TropRegIncreaseDistance(regularizers.Regularizer):
         '''
         self.lam = lam
 
-    def __call__(self, weight_matrix):
+    def __call__(self, weight_matrix: torch.Tensor) -> torch.Tensor:
         '''
         Calculates the Tropical regularization term to increase distances between weights.
 
         Parameters
         ----------
-        weight_matrix : tensorflow tensor object
+        weight_matrix : PyTorch tensor object
             Weight matrix of a layer.
 
         Returns
@@ -133,13 +141,39 @@ class TropRegIncreaseDistance(regularizers.Regularizer):
         regularization_term : float
             Tropical regularization term to increase distances between weights.
         '''
-        reshaped_weights = expand_dims(weight_matrix, 1)  # Reshape weights to have an additional dimension
-        result_addition = reshaped_weights + transpose(reshaped_weights, perm=[1, 0, 2])  # Add weight matrices and their transposes
-        tropical_distances = reduce_max(result_addition, axis=2) - reduce_min(result_addition, axis=2)  # Calculate tropical distances
-        n = shape(tropical_distances)[0]  # Get the shape of tropical distances
-        mask = band_part(ones((n, n), dtype=bool), 0, -1)  # Create a mask to exclude the main diagonal
-        flat_vector = boolean_mask(tropical_distances, logical_not(mask))  # Extract values not in the main diagonal
-        return self.lam * 50/(reduce_min(flat_vector) ** 0.5)
+        # weight_matrix: [N, D]
+
+        # reshaped_weights = expand_dims(weight_matrix, 1)  # Reshape weights to have an additional dimension
+        # result_addition = reshaped_weights + transpose(reshaped_weights, perm=[1, 0, 2])  # Add weight matrices and their transposes
+        # tropical_distances = reduce_max(result_addition, axis=2) - reduce_min(result_addition, axis=2)  # Calculate tropical distances
+        # n = shape(tropical_distances)[0]  # Get the shape of tropical distances
+        # mask = band_part(ones((n, n), dtype=bool), 0, -1)  # Create a mask to exclude the main diagonal
+        # flat_vector = boolean_mask(tropical_distances, logical_not(mask))  # Extract values not in the main diagonal
+        # return self.lam * 50/(reduce_min(flat_vector) ** 0.5)
+
+        # Expand dims: [N, 1, D]
+        reshaped_weights = weight_matrix.unsqueeze(1)
+
+        # Transpose for addition: reshaped_weights.transpose(0,1) -> [1, N, D]
+        # Broadcasting => [N,N,D]
+        result_addition = reshaped_weights + reshaped_weights.transpose(0, 1)
+
+        # tropical_distances: max-min over last dimension (D)
+        max_vals, _ = torch.max(result_addition, dim=2)  # [N,N]
+        min_vals, _ = torch.min(result_addition, dim=2)  # [N,N]
+        tropical_distances = max_vals - min_vals  # [N,N]
+
+        n = tropical_distances.size(0)
+
+        # Create a mask for upper-triangular including diagonal
+        # Similar to band_part(...,0,-1) in TF which gives upper triangle
+        mask = torch.triu(torch.ones((n, n), dtype=torch.bool, device=tropical_distances.device))
+
+        # We want the elements NOT in the upper triangle -> logical_not(mask)
+        flat_vector = tropical_distances[~mask]
+
+        # regularization term
+        return self.lam * 50 / (torch.min(flat_vector)**0.5)
     
     def get_config(self):
         config = {
@@ -149,9 +183,9 @@ class TropRegIncreaseDistance(regularizers.Regularizer):
         return dict(list(base_config.items()) + list(config.items()))
 
 
-class TropRegDecreaseDistance(regularizers.Regularizer):
+class TropRegDecreaseDistance:
     '''
-    Custom TensorFlow regularizer implementing Tropical regularization
+    Custom PyTorch regularizer implementing Tropical regularization
     to increase distances between weights in a layer. Penalizes weights 
     that are close to one another in an attempt to create a set of points 
     that can more robustly define the decision boundaries of input data. 
@@ -168,7 +202,7 @@ class TropRegDecreaseDistance(regularizers.Regularizer):
         '''
         self.lam = lam
 
-    def __call__(self, weight_matrix):
+    def __call__(self, weight_matrix: torch.Tensor) -> torch.Tensor:
         '''
         Calculates the Tropical regularization term to increase distances between weights.
 
@@ -182,13 +216,28 @@ class TropRegDecreaseDistance(regularizers.Regularizer):
         regularization_term : float
             Tropical regularization term to increase distances between weights.
         '''
-        reshaped_weights = expand_dims(weight_matrix, 1)  # Reshape weights to have an additional dimension
-        result_addition = reshaped_weights + transpose(reshaped_weights, perm=[1, 0, 2])  # Add weight matrices and their transposes
-        tropical_distances = reduce_max(result_addition, axis=2) - reduce_min(result_addition, axis=2)  # Calculate tropical distances
-        n = shape(tropical_distances)[0]  # Get the shape of tropical distances
-        mask = band_part(ones((n, n), dtype=bool), 0, -1)  # Create a mask to exclude the main diagonal
-        flat_vector = boolean_mask(tropical_distances, logical_not(mask))  # Extract values not in the main diagonal
-        return self.lam * reduce_max(flat_vector)  # Take max and multiple by lambda to obtain regularization term
+        # reshaped_weights = expand_dims(weight_matrix, 1)  # Reshape weights to have an additional dimension
+        # result_addition = reshaped_weights + transpose(reshaped_weights, perm=[1, 0, 2])  # Add weight matrices and their transposes
+        # tropical_distances = reduce_max(result_addition, axis=2) - reduce_min(result_addition, axis=2)  # Calculate tropical distances
+        # n = shape(tropical_distances)[0]  # Get the shape of tropical distances
+        # mask = band_part(ones((n, n), dtype=bool), 0, -1)  # Create a mask to exclude the main diagonal
+        # flat_vector = boolean_mask(tropical_distances, logical_not(mask))  # Extract values not in the main diagonal
+        # return self.lam * reduce_max(flat_vector)  # Take max and multiple by lambda to obtain regularization term
+
+        # Same logic as in TropRegIncreaseDistance
+        reshaped_weights = weight_matrix.unsqueeze(1)
+        result_addition = reshaped_weights + reshaped_weights.transpose(0, 1)
+
+        max_vals, _ = torch.max(result_addition, dim=2)
+        min_vals, _ = torch.min(result_addition, dim=2)
+        tropical_distances = max_vals - min_vals
+
+        n = tropical_distances.size(0)
+        mask = torch.triu(torch.ones((n, n), dtype=torch.bool, device=tropical_distances.device))
+        flat_vector = tropical_distances[~mask]
+
+        # Take max and multiply by lambda
+        return self.lam * torch.max(flat_vector)
 
     def get_config(self):
         config = {
@@ -198,42 +247,45 @@ class TropRegDecreaseDistance(regularizers.Regularizer):
         return dict(list(base_config.items()) + list(config.items()))
     
 
-class TropEmbed(Layer):
+# Converted to PyTorch by Kurt
+class TropEmbed(nn.Module):
     '''
-    Custom TensorFlow layer implementing Tropical Embedding for max-min distances.
+    Custom PyTorch module implementing Tropical Embedding with various distance metrics.
+    This class converted to PyTorch by Kurt Pasque.
     '''
 
     def __init__(self, 
-                 units=2, 
-                 initializer_w=initializers.random_normal, 
+                 in_features,
+                 out_features=2,
+                 initializer_w=None,
                  lam=0.0, 
                  axis_for_reduction=2, 
-                 distance_metric = "sym",
-                 **kwargs):
-        '''
-        Initializes the TropEmbedMaxMin layer.
+                 distance_metric="sym",):
+        """
+        Initializes the TropEmbed layer.
 
         Parameters
         ----------
-        units : int, optional
-            Number of output units (default is 2).
-        initializer_w : initializer function, optional
-            Weight initializer function (default is random_normal).
+        in_features : int
+            Size of each input sample.
+        out_features : int, optional
+            Number of output features (default is 2).
+        initializer_w : callable, optional
+            Weight initializer function (default is None, which uses nn.init.normal_).
         lam : float, optional
             Regularization parameter (default is 0.0).
         axis_for_reduction : int, optional
             Axis for reduction in distance calculation (default is 2).
         distance_metric : str, optional
-            Distance metric to employ. Possible options are "sym", "asym_max", "asym_min". (default is "sym")
-        **kwargs : dict
-            Additional keyword arguments.
-        '''
-        super(TropEmbed, self).__init__(**kwargs)
-        self.units = units
-        self.initializer_w = initializer_w
+            Distance metric to employ. Options are "sym", "asym_max", "asym_min" (default is "sym").
+        """
+        super(TropEmbed, self).__init__()
+        self.in_features = in_features
+        self.out_features = out_features
         self.lam = lam
         self.axis_for_reduction = axis_for_reduction
         self.distance_metric = distance_metric
+
         if self.distance_metric == "sym":
             self._distance_function = self._symmetric_distance
         elif self.distance_metric == "asym_max":
@@ -241,51 +293,140 @@ class TropEmbed(Layer):
         elif self.distance_metric == "asym_min":
             self._distance_function = self._asymmetric_min_distance
         else:
-            raise ValueError(f"{self.distance_metric} unsupported. TropEmbed layer distance metric argument needs to be sym, asym_max, or asym_min")
-        
-    def build(self, input_shape):
-        input_dim = input_shape[-1]  # Extract the last dimension from input_shape
-        self.w = self.add_weight(name='tropical_fw',
-                                 shape=(self.units, input_dim),
-                                 initializer=self.initializer_w,
-                                 regularizer=TropRegIncreaseDistance(lam=self.lam),
-                                 trainable=True) 
-        self.bias = self.add_weight(name='bias',
-                                    shape=(self.units,),
-                                    initializer="zeros",
-                                    trainable=True)
-        super(TropEmbed, self).build(input_shape)
+            raise ValueError(
+                f"{self.distance_metric} unsupported. Distance metric must be 'sym', 'asym_max', or 'asym_min'."
+            )
 
-    def _symmetric_distance(self, result_addition):
-        trop_distance = reduce_max(result_addition, axis=(self.axis_for_reduction)) - reduce_min(result_addition, axis=(self.axis_for_reduction)) + self.bias  # Calculate tropical distances with bias
-        return trop_distance
-    
-    def _asymmetric_max_distance(self, result_addition):
-        trop_distance = self.units*reduce_max(result_addition, axis=(self.axis_for_reduction)) - reduce_sum(result_addition, axis=(self.axis_for_reduction)) + self.bias  # Calculate tropical distances with bias
-        return trop_distance
+        # Initialize weights and biases
+        self.w = nn.Parameter(torch.Tensor(out_features, in_features))
+        self.bias = nn.Parameter(torch.Tensor(out_features))
+        self.reset_parameters(initializer_w)
 
-    def _asymmetric_min_distance(self, result_addition):
-        trop_distance = reduce_sum(result_addition, axis=(self.axis_for_reduction)) - self.units*reduce_min(result_addition, axis=(self.axis_for_reduction)) + self.bias  # Calculate tropical distances with bias
-        return trop_distance
-
-    def call(self, x):
-        '''
-        Performs the forward pass of the TropEmbedMaxMin layer.
+    def reset_parameters(self, initializer_w):
+        """
+        Initializes the weights and biases of the layer.
 
         Parameters
         ----------
-        x : tensorflow tensor object
-            Input tensor.
+        initializer_w : callable
+            Weight initializer function.
+        """
+        torch.manual_seed(0)
+        if initializer_w is None:
+            nn.init.normal_(self.w, mean=0.0, std=2.0)
+        else:
+            initializer_w(self.w)
+        nn.init.zeros_(self.bias)
+
+    # def build(self, input_shape):
+    #     input_dim = input_shape[-1]  # Extract the last dimension from input_shape
+    #     self.w = self.add_weight(name='tropical_fw',
+    #                              shape=(self.units, input_dim),
+    #                              initializer=self.initializer_w,
+    #                              regularizer=TropRegIncreaseDistance(lam=self.lam),
+    #                              trainable=True)
+    #     self.bias = self.add_weight(name='bias',
+    #                                 shape=(self.units,),
+    #                                 initializer="zeros",
+    #                                 trainable=True)
+    #     super(TropEmbed, self).build(input_shape)
+
+    def _symmetric_distance(self, result_addition):
+        """
+        Computes symmetric tropical distance.
+
+        Parameters
+        ----------
+        result_addition : torch.Tensor
+            Tensor after addition of input and weights.
 
         Returns
         -------
-        trop_distance : tensorflow tensor object
-            Output tensor after applying Tropical Embedding for max-min distances.
-        '''
-        x_reshaped = reshape(x, [-1, 1, self.w.shape[-1]])  # Reshape input data
-        x_for_broadcast = repeat_elements(x_reshaped, self.units, 1)  # Repeat input for broadcasting
-        result_addition = x_for_broadcast + self.w  # Calculate addition of input and weights
-        return self._distance_function(result_addition=result_addition)
+        torch.Tensor
+            Computed tropical distance.
+        """
+        max_vals, _ = torch.max(result_addition, dim=self.axis_for_reduction)
+        min_vals, _ = torch.min(result_addition, dim=self.axis_for_reduction)
+        trop_distance = max_vals - min_vals #+ self.bias
+        return trop_distance
+
+    def _asymmetric_max_distance(self, result_addition):
+        """
+        Computes asymmetric max tropical distance.
+
+        Parameters
+        ----------
+        result_addition : torch.Tensor
+            Tensor after addition of input and weights.
+
+        Returns
+        -------
+        torch.Tensor
+            Computed tropical distance.
+        """
+        max_vals, _ = torch.max(result_addition, dim=self.axis_for_reduction)
+        sum_vals = torch.sum(result_addition, dim=self.axis_for_reduction)
+        trop_distance = self.in_features * max_vals - sum_vals #+ self.bias
+        return trop_distance
+
+    def _asymmetric_min_distance(self, result_addition):
+        """
+        Computes asymmetric min tropical distance.
+
+        Parameters
+        ----------
+        result_addition : torch.Tensor
+            Tensor after addition of input and weights.
+
+        Returns
+        -------
+        torch.Tensor
+            Computed tropical distance.
+        """
+        min_vals, _ = torch.min(result_addition, dim=self.axis_for_reduction)
+        sum_vals = torch.sum(result_addition, dim=self.axis_for_reduction)
+        trop_distance = sum_vals - self.in_features * min_vals #+ self.bias
+        return trop_distance
+
+    # def call(self, x):
+    #     '''
+    #     Performs the forward pass of the TropEmbedMaxMin layer.
+    #
+    #     Parameters
+    #     ----------
+    #     x : tensorflow tensor object
+    #         Input tensor.
+    #
+    #     Returns
+    #     -------
+    #     trop_distance : tensorflow tensor object
+    #         Output tensor after applying Tropical Embedding for max-min distances.
+    #     '''
+    #     x_reshaped = reshape(x, [-1, 1, self.w.shape[-1]])  # Reshape input data
+    #     x_for_broadcast = repeat_elements(x_reshaped, self.units, 1)  # Repeat input for broadcasting
+    #     result_addition = x_for_broadcast + self.w  # Calculate addition of input and weights
+    #     return self._distance_function(result_addition=result_addition)
+
+    def forward(self, x):
+        """
+        Performs the forward pass of the TropEmbed layer.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor of shape (batch_size, in_features).
+
+        Returns
+        -------
+        torch.Tensor
+            Output tensor after applying Tropical Embedding.
+        """
+        return self._distance_function(x.unsqueeze(1) + self.w)
+
+    def extra_repr(self):
+        return (f"in_features={self.in_features}, "
+                f"out_features={self.out_features}, "
+                f"distance_metric='{self.distance_metric}'")
 
     def get_config(self):
         '''
@@ -298,7 +439,8 @@ class TropEmbed(Layer):
         '''
         config = {
             'units': self.units,
-            'initializer_w': initializers.serialize(self.initializer_w),
+            # 'initializer_w': initializers.serialize(self.initializer_w),
+            'initializer': str(self.initializer),
             'lam': self.lam,
             'axis_for_reduction': self.axis_for_reduction,
             'distance_metric': self.distance_metric
@@ -324,9 +466,9 @@ class TropEmbed(Layer):
         return cls(**config)
     
 
-class TropConv2D(Layer):
+class TropConv2D(nn.Module):
     '''
-    Custom TensorFlow layer implementing Tropical Convolution 2D.
+    Custom PyTorch layer implementing Tropical Convolution 2D.
     '''
 
     def __init__(self, 
@@ -334,8 +476,8 @@ class TropConv2D(Layer):
                  window_size=[1, 3, 3, 1], 
                  strides=[1, 1, 1, 1], 
                  rates=[1, 1, 1, 1],
-                 padding='VALID', 
-                 initializer_w=initializers.random_normal, 
+                 padding='valid',
+                 initializer_w=None,  # In PyTorch, handle initialization externally. see _init_weights
                  lam=0.0, 
                  **kwargs):
         '''
@@ -352,9 +494,9 @@ class TropConv2D(Layer):
         rates : list, optional
             Rate for dilated convolution (default is [1, 1, 1, 1]).
         padding : str, optional
-            Type of padding (default is 'VALID').
+            Type of padding (default is 'valid'). Options are ['valid','same']
         initializer_w : initializer function, optional
-            Weight initializer function (default is random_normal).
+            Weight initializer function (default is random normal).
         lam : float, optional
             Regularization parameter (default is 0.0).
         **kwargs : dict
@@ -362,47 +504,146 @@ class TropConv2D(Layer):
         '''
         super(TropConv2D, self).__init__(**kwargs)
         self.filters = filters
-        self.initializer_w = initializer_w
-        self.window_size = window_size
-        self.strides = strides
-        self.rates = rates
+        # self.initializer_w = initializer_w
+        # self.window_size = window_size
+        # self.strides = strides
+        # self.rates = rates
         self.padding = padding
         self.lam = lam
-        
 
-    def build(self, input_shape):
-        channels = input_shape[-1]  # Extract the last dimension from input_shape
-        self.w = self.add_weight(shape=(1, 1, 1, self.window_size[1] * self.window_size[2] * channels, self.filters),
-                                 initializer=self.initializer_w,
-                                 regularizer=TropRegIncreaseDistance(lam=self.lam),
-                                 trainable=True)
-        self.bias = self.add_weight(name='bias',
-                                    shape=(self.filters,),
-                                    initializer="zeros",
-                                    trainable=True)
-        super(TropConv2D, self).build(input_shape)
+        # Extract convolution parameters from given lists
+        # Easier to understand than constantly indexing arrays
+        # window_size: [1, kernel_h, kernel_w, 1]
+        kernel_h, kernel_w = window_size[1], window_size[2]
+        stride_h, stride_w = strides[1], strides[2]
+        # For rates, PyTorch calls it "dilation"
+        dilation_h, dilation_w = rates[1], rates[2]
 
-    def call(self, x):
-        '''
-        Performs the forward pass of the TropConv2D layer.
+        # Ensure a valid padding type is entered
+        if padding not in ['valid', 'same']:
+            raise ValueError("Only 'valid' or 'same' padding are supported.")
 
-        Parameters
-        ----------
-        x : tensorflow tensor object
-            Input tensor.
+        self.kernel_h = kernel_h
+        self.kernel_w = kernel_w
+        self.stride_h = stride_h
+        self.stride_w = stride_w
+        self.dilation_h = dilation_h
+        self.dilation_w = dilation_w
+        self.pad_h = pad_h
+        self.pad_w = pad_w
 
-        Returns
-        -------
-        trop_conv_result : tensorflow tensor object
-            Output tensor after applying Tropical Convolution 2D.
-        '''
-        x_patches = extract_patches(images=x, 
-                                    sizes=self.window_size, 
-                                    strides=self.strides, 
-                                    rates=self.rates,
-                                    padding=self.padding)  # Extract patches from input
-        result_addition = expand_dims(x_patches, axis=-1) + self.w  # Calculate addition of patches and weights
-        trop_conv_result = reduce_max(result_addition, axis=(3)) - reduce_min(result_addition, axis=(3)) + self.bias  # Compute tropical convolution
+        # Weights and bias will be initialized in build method equivalent (in PyTorch, __init__ is typically used)
+        # However, we don't know input channels until forward is called.
+        # We can defer weight creation until we know the input shape by using a lazy initialization approach.
+        self.w = None
+        self.bias = None
+
+        # Initialize initializer to PyTorch random normal
+        self.initializer_w = initializer_w if initializer_w is not None else nn.init.normal_
+
+    # Function to initialize weights of initializer
+    def _init_weights(self, in_channels):
+        # K = kernel_height*kernel_width*in_channels
+        K = self.kernel_h * self.kernel_w * in_channels
+
+        # In TF code: shape = (1,1,1,K,filters)
+        # We will store it as (K, filters) and unsqueeze when needed.
+        self.w = nn.Parameter(torch.empty(K, self.filters))
+        self.bias = nn.Parameter(torch.zeros(self.filters))
+
+        # Set seed for reproducibility
+        torch.manual_seed(0)
+
+        # Initialize w
+        torch.manual_seed(0)
+        self.initializer_w(self.w)
+
+    # def build(self, input_shape):
+    #     channels = input_shape[-1]  # Extract the last dimension from input_shape
+    #     self.w = self.add_weight(shape=(1, 1, 1, self.window_size[1] * self.window_size[2] * channels, self.filters),
+    #                              initializer=self.initializer_w,
+    #                              regularizer=TropRegIncreaseDistance(lam=self.lam),
+    #                              trainable=True)
+    #     self.bias = self.add_weight(name='bias',
+    #                                 shape=(self.filters,),
+    #                                 initializer="zeros",
+    #                                 trainable=True)
+    #     super(TropConv2D, self).build(input_shape)
+
+    # def call(self, x):
+    #     '''
+    #     Performs the forward pass of the TropConv2D layer.
+    #
+    #     Parameters
+    #     ----------
+    #     x : tensorflow tensor object
+    #         Input tensor.
+    #
+    #     Returns
+    #     -------
+    #     trop_conv_result : tensorflow tensor object
+    #         Output tensor after applying Tropical Convolution 2D.
+    #     '''
+    #     x_patches = extract_patches(images=x,
+    #                                 sizes=self.window_size,
+    #                                 strides=self.strides,
+    #                                 rates=self.rates,
+    #                                 padding=self.padding)  # Extract patches from input
+    #     result_addition = expand_dims(x_patches, axis=-1) + self.w  # Calculate addition of patches and weights
+    #     trop_conv_result = reduce_max(result_addition, axis=(3)) - reduce_min(result_addition, axis=(3)) + self.bias  # Compute tropical convolution
+    #     return trop_conv_result
+
+    def forward(self, x):
+        # x: [B, C, H, W]
+        B, C, H, W = x.shape
+
+        # If weights are not initialized yet, do it now
+        if self.w is None or self.bias is None:
+            self._init_weights(C)
+
+        # Use nn.Unfold to extract patches
+        unfold = nn.Unfold(kernel_size=(self.kernel_h, self.kernel_w),
+                           dilation=(self.dilation_h, self.dilation_w),
+                           padding=(self.pad_h, self.pad_w),
+                           stride=(self.stride_h, self.stride_w))
+
+        # x_unfold: [B, C*kernel_h*kernel_w, H_out*W_out]
+        x_unfold = unfold(x)
+
+        # Find H_out, W_out
+        # After unfold, number of patches = H_out * W_out
+        # H_out = floor((H + 2*pad - dilation*(kernel_h-1) -1)/stride_h)+1
+        # Given x_unfold.shape = [B, C*kernel_h*kernel_w, H_out*W_out]
+        num_patches = x_unfold.shape[2]
+        # H_out * W_out = num_patches
+        # Often H_out = (H - kernel_h + 1), W_out = (W - kernel_w + 1) for no padding, stride=1
+        # For simplicity, we can deduce if stride=1, pad=0:
+        H_out = H - self.kernel_h + 1
+        W_out = W - self.kernel_w + 1
+
+        # Reshape x_unfold to [B, K, H_out, W_out] where K = C*kernel_h*kernel_w
+        K = C * self.kernel_h * self.kernel_w
+        x_patches = x_unfold.view(B, K, H_out, W_out)
+
+        # Move K to the last dimension to match TF: [B,H_out,W_out,K]
+        x_patches = x_patches.permute(0, 2, 3, 1)  # [B,H_out,W_out,K]
+
+        # Add dimensions and weights: x_patches: [B,H_out,W_out,K]
+        # w: [K, filters] -> unsqueeze to [1,1,1,K,filters]
+        w_expanded = self.w.unsqueeze(0).unsqueeze(0).unsqueeze(0)  # [1,1,1,K,filters]
+
+        # Expand x_patches: unsqueeze last dim: [B,H_out,W_out,K,1]
+        x_expanded = x_patches.unsqueeze(-1)  # [B,H_out,W_out,K,1]
+
+        # result_addition = x_patches + w
+        result_addition = x_expanded + w_expanded  # [B,H_out,W_out,K,filters]
+
+        # Compute tropical convolution: max-min over the K dimension
+        # max over dimension 3, min over dimension 3
+        max_vals, _ = torch.max(result_addition, dim=3)  # [B,H_out,W_out,filters]
+        min_vals, _ = torch.min(result_addition, dim=3)  # [B,H_out,W_out,filters]
+        trop_conv_result = max_vals - min_vals + self.bias  # broadcast bias over filters
+
         return trop_conv_result
 
     def get_config(self):
@@ -416,11 +657,12 @@ class TropConv2D(Layer):
         '''
         config = {
             'filters': self.filters,
-            'window_size': self.window_size,
-            'strides': self.strides,
-            'rates': self.rates,
-            'padding': self.padding,
-            'initializer_w': initializers.serialize(self.initializer_w),
+            'kernel': [self.kernel_h, self.kernel_w],
+            'strides': [self.stride_h, self.stride_w],
+            'dilation': [self.dilation_h, self.dilation_w],
+            'padding': [self.pad_h, self.pad_w],
+            # 'initializer_w': initializers.serialize(self.initializer_w),
+            'initializer_w': str(self.initializer_w),
             'lam': self.lam
         }
         base_config = super(TropConv2D, self).get_config()
@@ -444,47 +686,47 @@ class TropConv2D(Layer):
         return cls(**config)
 
 
-class TropEmbedTop2(Layer): #UNUSED, WOULD NEED TO UPDATE IF USING, BUT KEEPING BECAUSE OF DIFFERENT TROPICAL METRIC 
-    '''
-    Custom TensorFlow layer implementing Tropical Embedding for top 2 values.
-    '''
-
-    def __init__(self, units=2, input_dim=3):
-        '''
-        Initializes the TropEmbedTop2 layer.
-
-        Parameters
-        ----------
-        units : int, optional
-            Number of output units (default is 2).
-        input_dim : int, optional
-            Dimension of input data (default is 3).
-        '''
-        super(TropEmbedTop2, self).__init__()
-        self.w = self.add_weight(
-            shape=(units, input_dim),
-            initializer=initializers.RandomNormal(),
-            regularizer=TropRegIncreaseDistance(lam=0.01),
-            trainable=True
-        )
-        self.units = units
-        self.input_dim = input_dim
-
-    def call(self, inputs):
-        '''
-        Performs the forward pass of the TropEmbedTop2 layer.
-
-        Parameters
-        ----------
-        inputs : tensorflow tensor object
-            Input tensor.
-
-        Returns
-        -------
-        output : tensorflow tensor object
-            Output tensor after applying Tropical Embedding for top 2 values.
-        '''
-        input_reshaped = reshape(inputs, [-1, 1, self.input_dim])  # Reshape input data
-        input_for_broadcast = repeat_elements(input_reshaped, self.units, 1)  # Repeat input for broadcasting
-        values, _ = top_k(input_for_broadcast + self.w, 2)  # Calculate top 2 values
-        return values[:, :, 0] - values[:, :, 1]  # Compute symmetric tropical distance
+# class TropEmbedTop2(Layer): #UNUSED, WOULD NEED TO UPDATE IF USING, BUT KEEPING BECAUSE OF DIFFERENT TROPICAL METRIC
+#     '''
+#     Custom TensorFlow layer implementing Tropical Embedding for top 2 values.
+#     '''
+#
+#     def __init__(self, units=2, input_dim=3):
+#         '''
+#         Initializes the TropEmbedTop2 layer.
+#
+#         Parameters
+#         ----------
+#         units : int, optional
+#             Number of output units (default is 2).
+#         input_dim : int, optional
+#             Dimension of input data (default is 3).
+#         '''
+#         super(TropEmbedTop2, self).__init__()
+#         self.w = self.add_weight(
+#             shape=(units, input_dim),
+#             initializer=initializers.RandomNormal(),
+#             regularizer=TropRegIncreaseDistance(lam=0.01),
+#             trainable=True
+#         )
+#         self.units = units
+#         self.input_dim = input_dim
+#
+#     def call(self, inputs):
+#         '''
+#         Performs the forward pass of the TropEmbedTop2 layer.
+#
+#         Parameters
+#         ----------
+#         inputs : tensorflow tensor object
+#             Input tensor.
+#
+#         Returns
+#         -------
+#         output : tensorflow tensor object
+#             Output tensor after applying Tropical Embedding for top 2 values.
+#         '''
+#         input_reshaped = reshape(inputs, [-1, 1, self.input_dim])  # Reshape input data
+#         input_for_broadcast = repeat_elements(input_reshaped, self.units, 1)  # Repeat input for broadcasting
+#         values, _ = top_k(input_for_broadcast + self.w, 2)  # Calculate top 2 values
+#         return values[:, :, 0] - values[:, :, 1]  # Compute symmetric tropical distance

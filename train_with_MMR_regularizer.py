@@ -10,7 +10,7 @@ import time
 import sys
 import os
 import numpy as np
-import tensorflow as tf  # TODO: Delete once works
+# import tensorflow as tf  # TODO: Delete once works
 from absl import app, flags
 from pathlib import Path
 
@@ -28,8 +28,11 @@ from custom_layers.mmr_regularizer import mmr_cnn
 from cleverhans.torch.attacks.projected_gradient_descent import projected_gradient_descent
 from cleverhans.torch.attacks.fast_gradient_method import fast_gradient_method
 
-
+# TODO: Modularize this code
 def main(_):
+    # Set seed for reproducibility
+    torch.manual_seed(0)
+
     dataset = "mnist"
     batch_size = 8
     nb_epochs = 1
@@ -181,7 +184,7 @@ def main(_):
             print(f"\tEpoch Loss: {epoch_loss:.4f}, "
                   f"Training Accuracy: {train_accuracy:.4f}")
 
-            # Validation
+            # Model validation
             model.eval()
             val_correct = 0
             val_total = 0
@@ -193,38 +196,17 @@ def main(_):
                     val_total += y_val.size()
 
             val_accuracy = val_correct / val_total
-            print(f"\tValidation Accuracy: {val_accuracy:.4f}")
 
             # Check if model accuracy is better
             if val_accuracy > best_val_accuracy + min_delta:
                 best_val_accuracy = val_accuracy
-                patience_counter = 0
+                patience_counter = 0  # Reset patience
             else:
                 patience_counter += 1
+                print(f"\t\tNo improvement, patience counter: {patience_counter}/{early_stopping_patience}")
 
-            # Check validation set for improvement
-            model.eval()
-            correct = 0
-            total = 0
-            with torch.no_grad():
-                for x_val, y_val in val_loader:
-                    x_val, y_val = x_val.to(device), y_val.to(device)
-                    predictions = model(x_val)
-                    correct += (predictions.argmax(1) == y_val).sum().item()
-                    total += y_val.size(0)
-
-            # Calculate validation accuracy
-            val_accuracy = correct / total
-            print(f"\tValidation Accuracy: {val_accuracy:.4f}")
-
-            # Check if model has improved
-            if val_accuracy > best_val_accuracy + min_delta:
-                best_val_accuracy = val_accuracy
-                patience_counter = 0
-            else:
-                patience_counter += 1
-                
-            print(f'---- epoch {epoch}, Validation Accuracy {val_accuracy}, Best: {best_val_accuracy} ----') #Validation Loss: {val_loss}, Best: {best_val_loss},
+            # Print results of validation
+            print(f'\tEpoch {epoch}, Validation Accuracy {val_accuracy:.4f}, Best: {best_val_accuracy:.4f}')
             
             # Kill training if conditions are met
             if patience_counter >= early_stopping_patience and epoch >= min_epochs - 1:
@@ -233,7 +215,7 @@ def main(_):
 
         # Print training metrics
         elapsed = time.time() - start
-        print(f'\nTraining time per epoch = {elapsed/epoch_counter} seconds | {elapsed/60/epoch_counter} minutes')
+        print(f'\nTraining time per epoch = {elapsed/epoch_counter} seconds | {elapsed/epoch_counter/60} minutes')
         print(f'Training time total = {elapsed} seconds | {elapsed/60} minutes')
         model.summary()
 
@@ -241,8 +223,9 @@ def main(_):
         current_time = time.localtime()
         formatted_date = time.strftime("%d%b%y", current_time)
         os.makedirs('new_master_models', exist_ok=True)
-        file_path = Path(f'new_master_models/{name}_{formatted_date}_model.pth')
-        torch.save(model.state_dict(), file_path)
+        file_path = Path(f'new_master_models/{name}_{formatted_date}.pt')
+        model_scripted = torch.jit.script(model)  # Export to TorchScript
+        model_scripted.save(file_path)
         print(f'Model saved: {file_path}')
 
 

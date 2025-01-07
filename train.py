@@ -9,7 +9,7 @@ import math
 import time
 import sys
 import numpy as np
-import tensorflow as tf  # TODO: Delete once works
+# import tensorflow as tf  # TODO: Delete once works
 import os
 from PathLib import Path
 
@@ -22,9 +22,12 @@ import torch.optim as optim
 from absl import app
 from functions.attacks import l1_projected_gradient_descent, l2_projected_gradient_descent
 from functions.utils import load_models, load_data, find_model
-from cleverhans.tf2.attacks.projected_gradient_descent import projected_gradient_descent
+from cleverhans.torch.attacks.projected_gradient_descent import projected_gradient_descent
 
+# TODO: Modularize some of this code to make it more readable
 def main(_):
+    # Set seed for reproducibility
+    torch.manual_seed(0)
 
     model_num = sys.argv[1]
     lr = float(sys.argv[2])
@@ -318,8 +321,9 @@ def main(_):
         current_time = time.localtime()
         formatted_date = time.strftime("%d%b%y", current_time)
         os.makedirs('new_master_models', exist_ok=True)
-        file_path = Path(f'new_master_models/{name}_{formatted_date}_model.pth')
-        torch.save(model.state_dict(), file_path)
+        file_path = Path(f'new_master_models/{name}_{formatted_date}.pt')
+        model_scripted = torch.jit.script(model)  # Export to TorchScript
+        model_scripted.save(file_path)
         print(f'Model saved: {file_path}')
 
 

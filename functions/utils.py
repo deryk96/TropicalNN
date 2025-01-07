@@ -1,73 +1,194 @@
+import copy
 import matplotlib.pyplot as plt
-import tensorflow as tf
 import os
-from functions.models import ResNet50Model, ModifiedLeNet5, LeNet5, VGG16Model, MobileNetModel, EfficientNetB4Model, AlexNetModel, MMRModel
-from tensorflow import cast, float32, reduce_any
-import tensorflow_datasets as tfds
 from easydict import EasyDict
 
-def convert_types(image, label):
-    """Convert image types and normalize to [-1, 1]."""
-    image = cast(image, float32)
-    image /= 127.5
-    image -= 1.0
-    return image, label
+# Torch imports
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torchvision import datasets, transforms
+from torch.utils.data import DataLoader, Subset
+
+# TODO: Delete once works
+# import tensorflow as tf
+# from tensorflow import cast, float32, reduce_any
+# import tensorflow_datasets as tfds
+
+# Custom functions
+from functions.models import (ResNet50Model, ModifiedLeNet5, LeNet5, VGG16Model,
+                              MobileNetModel, EfficientNetB4Model, AlexNetModel, MMRModel)
+
+############################
+# Data Loading and Filtering
+############################
+
+# def convert_types(image, label):
+#     """Convert image types and normalize to [-1, 1]."""
+#     image = cast(image, float32)
+#     image /= 127.5
+#     image -= 1.0
+#     return image, label
 
 def filter_classes(dataset, classes):
-    """Filter the dataset to include only specified classes."""
-    return dataset.filter(lambda image, label: reduce_any([label == cls for cls in classes]))
+    """
+    Filter the dataset to include only specified classes.
+    classes: list of class indices to keep.
+    """
+    # return dataset.filter(lambda image, label: reduce_any([label == cls for cls in classes]))
+
+    # We have dataset.targets for most torchvision datasets
+    targets = np.array(dataset.targets)
+    mask = np.isin(targets, classes)
+    indices = np.where(mask)[0]
+    return Subset(dataset, indices)
 
 def ld_mnist(batch_size=128, classes=None):
-    """Load MNIST training and test data and filter by specified classes."""
-    dataset, info = tfds.load("mnist", with_info=True, as_supervised=True)
+    """
+    Load MNIST using torchvision, filter classes if specified, and return DataLoaders.
+    """
+    # dataset, info = tfds.load("mnist", with_info=True, as_supervised=True)
+    #
+    # mnist_train, mnist_test = dataset["train"], dataset["test"]
+    #
+    # # Apply class filtering if classes are specified
+    # if classes is not None:
+    #     mnist_train = filter_classes(mnist_train, classes)
+    #     mnist_test = filter_classes(mnist_test, classes)
+    #
+    # mnist_train = mnist_train.map(convert_types).shuffle(10000).batch(batch_size)
+    # mnist_test = mnist_test.map(convert_types).batch(batch_size)
+    #
+    # return EasyDict(train=mnist_train, test=mnist_test), info
 
-    mnist_train, mnist_test = dataset["train"], dataset["test"]
-    
-    # Apply class filtering if classes are specified
+    transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.5], std=[0.5]) # MNIST is single-channel
+    ])
+
+    train_dataset = datasets.MNIST(root='./data', train=True, transform=transform, download=True)
+    test_dataset = datasets.MNIST(root='./data', train=False, transform=transform, download=True)
+
     if classes is not None:
-        mnist_train = filter_classes(mnist_train, classes)
-        mnist_test = filter_classes(mnist_test, classes)
-    
-    mnist_train = mnist_train.map(convert_types).shuffle(10000).batch(batch_size)
-    mnist_test = mnist_test.map(convert_types).batch(batch_size)
+        train_dataset = filter_classes(train_dataset, classes)
+        test_dataset = filter_classes(test_dataset, classes)
 
-    return EasyDict(train=mnist_train, test=mnist_test), info
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size)
+
+    info = EasyDict(splits={'train': EasyDict(num_examples=len(train_dataset)),
+                            'test': EasyDict(num_examples=len(test_dataset))})
+    return EasyDict(train=train_loader, test=test_loader), info
 
 def ld_svhn(batch_size = 128):
-    """Load SVHN training and test data."""
-    dataset, info = tfds.load("svhn_cropped", with_info=True, as_supervised=True)
+    """
+    Load SVHN training and test data.
+    """
+    # dataset, info = tfds.load("svhn_cropped", with_info=True, as_supervised=True)
+    #
+    # svhn_train, svhn_test = dataset["train"], dataset["test"]
+    # svhn_train = svhn_train.map(convert_types).shuffle(10000).batch(batch_size)
+    # svhn_test = svhn_test.map(convert_types).batch(batch_size)
+    #
+    # return EasyDict(train=svhn_train, test=svhn_test), info
 
-    svhn_train, svhn_test = dataset["train"], dataset["test"]
-    svhn_train = svhn_train.map(convert_types).shuffle(10000).batch(batch_size)
-    svhn_test = svhn_test.map(convert_types).batch(batch_size)
+    transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.5]*3, std=[0.5]*3)
+    ])
 
-    return EasyDict(train=svhn_train, test=svhn_test), info
+    train_dataset = datasets.SVHN(root='./data', split='train', transform=transform, download=True)
+    test_dataset = datasets.SVHN(root='./data', split='test', transform=transform, download=True)
+
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size)
+
+    info = EasyDict(splits={'train': EasyDict(num_examples=len(train_dataset)),
+                            'test': EasyDict(num_examples=len(test_dataset))})
+    return EasyDict(train=train_loader, test=test_loader), info
 
 def ld_cifar10(batch_size = 128):
-    """Load CIFAR-10 training and test data."""
-    dataset, info = tfds.load("cifar10", with_info=True, as_supervised=True)
+    """
+    Load CIFAR-10 training and test data.
+    """
+    # """Load CIFAR-10 training and test data."""
+    # dataset, info = tfds.load("cifar10", with_info=True, as_supervised=True)
+    #
+    # cifar10_train, cifar10_test = dataset["train"], dataset["test"]
+    # cifar10_train = cifar10_train.map(convert_types).shuffle(10000).batch(batch_size)
+    # cifar10_test = cifar10_test.map(convert_types).batch(batch_size)
+    #
+    # return EasyDict(train=cifar10_train, test=cifar10_test), info
 
-    cifar10_train, cifar10_test = dataset["train"], dataset["test"]
-    cifar10_train = cifar10_train.map(convert_types).shuffle(10000).batch(batch_size)
-    cifar10_test = cifar10_test.map(convert_types).batch(batch_size)
+    transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.5]*3, std=[0.5]*3)
+    ])
 
-    return EasyDict(train=cifar10_train, test=cifar10_test), info
+    train_dataset = datasets.CIFAR10(root='./data', train=True, transform=transform, download=True)
+    test_dataset = datasets.CIFAR10(root='./data', train=False, transform=transform, download=True)
+
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size)
+
+    info = EasyDict(splits={'train': EasyDict(num_examples=len(train_dataset)),
+                            'test': EasyDict(num_examples=len(test_dataset))})
+    return EasyDict(train=train_loader, test=test_loader), info
 
 def ld_cifar100(batch_size = 128):
-    """Load CIFAR-10 training and test data."""
-    dataset, info = tfds.load("cifar100", with_info=True, as_supervised=True)
+    """
+    Load CIFAR-100 training and test data.
+    """
+    # dataset, info = tfds.load("cifar100", with_info=True, as_supervised=True)
+    #
+    # cifar100_train, cifar100_test = dataset["train"], dataset["test"]
+    # cifar100_train = cifar100_train.map(convert_types).shuffle(10000).batch(batch_size)
+    # cifar100_test = cifar100_test.map(convert_types).batch(batch_size)
+    #
+    # return EasyDict(train=cifar100_train, test=cifar100_test), info
 
-    cifar100_train, cifar100_test = dataset["train"], dataset["test"]
-    cifar100_train = cifar100_train.map(convert_types).shuffle(10000).batch(batch_size)
-    cifar100_test = cifar100_test.map(convert_types).batch(batch_size)
+    transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.5]*3, std=[0.5]*3)
+    ])
 
-    return EasyDict(train=cifar100_train, test=cifar100_test), info
+    train_dataset = datasets.CIFAR100(root='./data', train=True, transform=transform, download=True)
+    test_dataset = datasets.CIFAR100(root='./data', train=False, transform=transform, download=True)
+
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size)
+
+    info = EasyDict(splits={'train': EasyDict(num_examples=len(train_dataset)),
+                            'test': EasyDict(num_examples=len(test_dataset))})
+    return EasyDict(train=train_loader, test=test_loader), info
+
+########################
+# Distance Functions
+########################
 
 def l2(x, y):
-    return tf.sqrt(tf.reduce_sum(tf.square(x - y), list(range(1, len(x.shape)))))
+    """
+    Compute L2 distance across spatial dims.
+    x,y: torch Tensors of shape [B, ...]
+    """
+    # return tf.sqrt(tf.reduce_sum(tf.square(x - y), list(range(1, len(x.shape)))))
+
+    # x,y: torch Tensors of shape [B, ...]
+    # Compute L2 distance across spatial dims
+    return torch.sqrt(torch.sum((x - y)**2, dim=tuple(range(1, x.ndim))))
 
 def l1(x, y):
-    return tf.reduce_sum(tf.abs(x - y), list(range(1, len(x.shape))))
+    """
+    Compute L2 distance across spatial dims.
+    x,y: torch Tensors of shape [B, ...]
+    """
+    # return tf.reduce_sum(tf.abs(x - y), list(range(1, len(x.shape))))
+
+    return torch.sum(torch.abs(x - y), dim=tuple(range(1, x.ndim)))
+
+########################
+# Plotting Function
+########################
 
 def plot_images_in_grid(list_of_xs, row_labels, col_labels, save_path, input_elements):
     num_rows = len(row_labels)
@@ -77,10 +198,16 @@ def plot_images_in_grid(list_of_xs, row_labels, col_labels, save_path, input_ele
         cmap = 'gray'
     else:
         cmap = None
+
+    # list_of_xs[j][i] should be a numpy array or convert from torch
     for i in range(num_rows):
         for j in range(num_cols):
             ax = axes[i, j]
-            ax.imshow(list_of_xs[j][i,:,:,:], cmap=cmap)
+            # ax.imshow(list_of_xs[j][i,:,:,:], cmap=cmap)
+            img = list_of_xs[j][i].permute(1,2,0).cpu().numpy() \
+                if torch.is_tensor(list_of_xs[j][i]) \
+                else list_of_xs[j][i]
+            ax.imshow(img, cmap=cmap)
             ax.axis('off')
             if i == 0:
                 ax.set_title(col_labels[j], size='large')
@@ -89,6 +216,9 @@ def plot_images_in_grid(list_of_xs, row_labels, col_labels, save_path, input_ele
     plt.savefig(save_path, bbox_inches='tight')
     plt.close()
 
+########################
+# load_data function
+########################
 
 def load_data(dataset_name, batch_size, classes = None):
     # -- load data and set epsilon --
@@ -121,21 +251,34 @@ def load_data(dataset_name, batch_size, classes = None):
         num_classes = 100
         input_shape = (32,32,3)
     else:
-        raise ValueError("Invalid dataset name provided. Should be either mnist, svhn, cifar10, cifar100, or imagenet")
+        raise ValueError("Invalid dataset name provided. Should be either 'mnist', 'svhn', 'cifar10', 'cifar100', or 'imagenet'")
     return dataset_category, eps, input_elements, data, info, input_shape, num_classes
 
+########################
+# Model Loading and Utility
+########################
 
 def find_model(dataset_name, base_model, top_layer, root_dir = "new_master_models"):
-    valid_datasets = ["mnist", "svhn", "cifar10", "cifar100"]
-    valid_base_models = ["LeNet5", "ModifiedLeNet5", "MobileNet", "ResNet50", "VGG16", "EfficientNetB4"]
-    valid_top_layers = ["maxout", "relu", "trop"]
-    for dir_path, _dirnames_, filenames in os.walk(root_dir):
+    # valid_datasets = ["mnist", "svhn", "cifar10", "cifar100"]
+    # valid_base_models = ["LeNet5", "ModifiedLeNet5", "MobileNet", "ResNet50", "VGG16", "EfficientNetB4"]
+    # valid_top_layers = ["maxout", "relu", "trop"]
+    # for dir_path, _dirnames_, filenames in os.walk(root_dir):
+    #     for filename in filenames:
+    #         # if not ".keras" in filename:
+    #
+    #             continue
+    #         list_dirname = filename.split('_')
+    #         if (list_dirname[0] == dataset_name) and (list_dirname[1] == base_model) and (list_dirname[2] == top_layer) and (list_dirname[3] == "no"):
+    #             return os.path.join(dir_path, filename)
+
+    for dir_path, _, filenames in os.walk(root_dir):
         for filename in filenames:
-            if not ".keras" in filename:
+            if not ".pt" in filename and not ".pth" in filename:  # Two filetypes of PyTorch models
                 continue
             list_dirname = filename.split('_')
-            if (list_dirname[0] == dataset_name) and (list_dirname[1] == base_model) and (list_dirname[2] == top_layer) and (list_dirname[3] == "no"):
-                return os.path.join(dir_path, filename)  
+            if ((list_dirname[0] == dataset_name) and (list_dirname[1] == base_model) and
+                    (list_dirname[2] == top_layer) and (list_dirname[3] == "no")):
+                return os.path.join(dir_path, filename)
 
 
 def model_choice(dataset_name, base_model, top, adv_train):
@@ -160,13 +303,20 @@ def model_choice(dataset_name, base_model, top, adv_train):
         model =  AlexNetModel(num_classes=num_classes, top=top)
     elif base_model == "MMR":
         model = MMRModel(num_classes=num_classes)
+    else:
+        raise ValueError("Base model not recognized.")
 
+    # TODO: Need the PyTorch equivalent for model loading
     if adv_train == "yes":
         starting_model_path = find_model(dataset_name, base_model, top)
-        starting_model = tf.keras.models.load_model(starting_model_path)
-        new_model = tf.keras.models.clone_model(starting_model)
-        starting_model_weights = starting_model.get_weights()
-        new_model.set_weights(starting_model_weights)
+        # starting_model = tf.keras.models.load_model(starting_model_path)
+        starting_model = torch.jit.load(starting_model_path).eval()  # eval() sets dropout/batch normalization layers to eval mode
+        # new_model = tf.keras.models.clone_model(starting_model)
+        new_model = copy.deepcopy(starting_model)  # Deep copy to not disturb original
+
+        # Pytorch copies weights and biases from original
+        # starting_model_weights = starting_model.get_weights()
+        # new_model.set_weights(starting_model_weights)
         return new_model
     else:
         return model
@@ -178,7 +328,10 @@ def load_models(config):
             for top_layer, config3 in config2.items():
                 for adv_train, answer in config3.items():
                     if answer == 1:
-                        models[f"{dataset_name}_{base_model}_{top_layer}_{adv_train}"] = model_choice(dataset_name, base_model, top_layer, adv_train)
+                        models[f"{dataset_name}_{base_model}_{top_layer}_{adv_train}"] = model_choice(dataset_name,
+                                                                                                      base_model,
+                                                                                                      top_layer,
+                                                                                                      adv_train)
     return models
                                                                                     
 def find_directories_with_keyphrase(root_dir, dataset_name):

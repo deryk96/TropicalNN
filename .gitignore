@@ -18,3 +18,4 @@ master_models
 *.txt
 *.xml
 *.iml
+.DS_Store
