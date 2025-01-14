@@ -45,7 +45,7 @@ def filter_classes(dataset, classes):
 
 def ld_mnist(batch_size=128, classes=None):
     """
-    Load MNIST using torchvision, filter classes if specified, and return DataLoaders.
+    Load MNIST using torchvision, filter classes if specified, and return DataSets.
     """
     # dataset, info = tfds.load("mnist", with_info=True, as_supervised=True)
     #
@@ -73,12 +73,9 @@ def ld_mnist(batch_size=128, classes=None):
         train_dataset = filter_classes(train_dataset, classes)
         test_dataset = filter_classes(test_dataset, classes)
 
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size)
-
     info = EasyDict(splits={'train': EasyDict(num_examples=len(train_dataset)),
                             'test': EasyDict(num_examples=len(test_dataset))})
-    return EasyDict(train=train_loader, test=test_loader), info
+    return EasyDict(train=train_dataset, test=test_dataset), info
 
 def ld_svhn(batch_size = 128):
     """
@@ -100,12 +97,9 @@ def ld_svhn(batch_size = 128):
     train_dataset = datasets.SVHN(root='./data', split='train', transform=transform, download=True)
     test_dataset = datasets.SVHN(root='./data', split='test', transform=transform, download=True)
 
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size)
-
     info = EasyDict(splits={'train': EasyDict(num_examples=len(train_dataset)),
                             'test': EasyDict(num_examples=len(test_dataset))})
-    return EasyDict(train=train_loader, test=test_loader), info
+    return EasyDict(train=train_dataset, test=test_dataset), info
 
 def ld_cifar10(batch_size = 128):
     """
@@ -128,12 +122,9 @@ def ld_cifar10(batch_size = 128):
     train_dataset = datasets.CIFAR10(root='./data', train=True, transform=transform, download=True)
     test_dataset = datasets.CIFAR10(root='./data', train=False, transform=transform, download=True)
 
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size)
-
     info = EasyDict(splits={'train': EasyDict(num_examples=len(train_dataset)),
                             'test': EasyDict(num_examples=len(test_dataset))})
-    return EasyDict(train=train_loader, test=test_loader), info
+    return EasyDict(train=train_dataset, test=test_dataset), info
 
 def ld_cifar100(batch_size = 128):
     """
@@ -155,12 +146,9 @@ def ld_cifar100(batch_size = 128):
     train_dataset = datasets.CIFAR100(root='./data', train=True, transform=transform, download=True)
     test_dataset = datasets.CIFAR100(root='./data', train=False, transform=transform, download=True)
 
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size)
-
     info = EasyDict(splits={'train': EasyDict(num_examples=len(train_dataset)),
                             'test': EasyDict(num_examples=len(test_dataset))})
-    return EasyDict(train=train_loader, test=test_loader), info
+    return EasyDict(train=train_dataset, test=test_dataset), info
 
 ########################
 # Distance Functions
@@ -251,7 +239,8 @@ def load_data(dataset_name, batch_size, classes = None):
         num_classes = 100
         input_shape = (32,32,3)
     else:
-        raise ValueError("Invalid dataset name provided. Should be either 'mnist', 'svhn', 'cifar10', 'cifar100', or 'imagenet'")
+        raise ValueError("Invalid dataset name provided. "
+                         "Should be either 'mnist', 'svhn', 'cifar10', 'cifar100', or 'imagenet'")
     return dataset_category, eps, input_elements, data, info, input_shape, num_classes
 
 ########################

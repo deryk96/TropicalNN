@@ -260,7 +260,8 @@ class TropEmbed(nn.Module):
                  initializer_w=None,
                  lam=0.0, 
                  axis_for_reduction=2, 
-                 distance_metric="sym",):
+                 distance_metric="sym",
+                 **kwargs):
         """
         Initializes the TropEmbed layer.
 
@@ -298,8 +299,10 @@ class TropEmbed(nn.Module):
             )
 
         # Initialize weights and biases
-        self.w = nn.Parameter(torch.Tensor(out_features, in_features))
-        self.bias = nn.Parameter(torch.Tensor(out_features))
+        # self.w = nn.Parameter(torch.Tensor(out_features, in_features))
+        self.w = nn.Parameter(torch.empty(out_features, in_features))
+        # self.bias = nn.Parameter(torch.Tensor(out_features))
+        self.bias = nn.Parameter(torch.zeros(out_features))
         self.reset_parameters(initializer_w)
 
     def reset_parameters(self, initializer_w):
@@ -316,7 +319,7 @@ class TropEmbed(nn.Module):
             nn.init.normal_(self.w, mean=0.0, std=2.0)
         else:
             initializer_w(self.w)
-        nn.init.zeros_(self.bias)
+        # nn.init.zeros_(self.bias)  # Moved above
 
     # def build(self, input_shape):
     #     input_dim = input_shape[-1]  # Extract the last dimension from input_shape
@@ -421,7 +424,15 @@ class TropEmbed(nn.Module):
         torch.Tensor
             Output tensor after applying Tropical Embedding.
         """
-        return self._distance_function(x.unsqueeze(1) + self.w)
+        # Not working, gonna try the old way
+        # print(f'**** {x.shape = }, {x.unsqueeze(1).shape}, {self.w.shape = }')
+        # return self._distance_function(x.unsqueeze(1) + self.w)
+
+        x_reshaped = x.unsqueeze(1)
+        w_expanded = self.w.unsqueeze(0)
+        print(f'**** {x_reshaped.shape = }, {w_expanded.shape = }, {self.in_features = }, {self.out_features = }')
+        result_addition = x_reshaped + w_expanded
+        return self._distance_function(result_addition)
 
     def extra_repr(self):
         return (f"in_features={self.in_features}, "
@@ -539,7 +550,7 @@ class TropConv2D(nn.Module):
         self.bias = None
 
         # Initialize initializer to PyTorch random normal
-        self.initializer_w = initializer_w if initializer_w is not None else nn.init.normal_
+        self.initializer_w = initializer_w if initializer_w else nn.init.normal_
 
     # Function to initialize weights of initializer
     def _init_weights(self, in_channels):
@@ -555,7 +566,6 @@ class TropConv2D(nn.Module):
         torch.manual_seed(0)
 
         # Initialize w
-        torch.manual_seed(0)
         self.initializer_w(self.w)
 
     # def build(self, input_shape):

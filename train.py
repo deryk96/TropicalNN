@@ -3,15 +3,19 @@ File name: train.py
 Description:
     Code for building all models except MMR regularized models. Very crude dictionary that serves as config
     for which models to build in here. Might update for external config at some point.
+
+    Use: python train.py [model_num] [learning_rate] [optimizer_name]
 """
 
 import math
 import time
 import sys
+
+import matplotlib.pyplot as plt
 import numpy as np
 # import tensorflow as tf  # TODO: Delete once works
 import os
-from PathLib import Path
+from pathlib import Path
 
 # Dependencies for PyTorch
 import torch
@@ -100,13 +104,14 @@ def main(_):
     models = load_models(config=dict_settings)
     old_dataset_name = None
     model_counter = -1  # Unsmart way to start a counter  # TODO: Fix whatever this is
-    batch_size = 128  # Training batch size that is.
+    batch_size = 128  # Training batch size
     eps_iter_portion = 0.2  # Scale of epsilon iterations for attack steps if adversarially training
     att_steps = 10  # Number of PGD/SLIDE attack steps if adversarially training
     early_stopping_patience = 5   # Number of epochs to wait for improvement
     min_delta = 0.001   # Minimum change to qualify as an improvement
     min_epochs = 10  # Min epochs
-    max_epochs = 300  # Max epochs
+    # max_epochs = 300  # Max epochs  # TODO: Undo after debugging
+    max_epochs = 11
 
     # Set device to be used (GPU or CPU)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -117,6 +122,7 @@ def main(_):
         print(f"Model name: {name}")
         model_counter += 1
         if boo_run_all == False and model_num != model_counter:
+            print(f'Skipping model {model_counter}.')
             continue
             
         # Get key information from model name
@@ -132,9 +138,11 @@ def main(_):
             _, eps, input_elements, data, info, _, _ = load_data(dataset_name, batch_size)
 
             # Extract and load training/validation sets
-            train_size = int(info["train_size"] * 0.9)
-            val_size = info["train_size"] - train_size
-            data_train, data_val = random_split(data["train"], [train_size, val_size])
+            tot_size = len(data["train"])
+            val_size = int(tot_size * 0.1)  # 10% for validation
+            train_size = tot_size - val_size
+            generator = torch.Generator().manual_seed(0)  # Set seed for train/val split
+            data_train, data_val = random_split(data["train"], [train_size, val_size], generator=generator)
             train_loader = DataLoader(data_train, batch_size=batch_size, shuffle=True)
             val_loader = DataLoader(data_val, batch_size=batch_size, shuffle=False)
 
@@ -200,11 +208,12 @@ def main(_):
             # TODO: Make progress bar?
 
             # Print progress
-            print(f"\nEpoch {epoch}, adv_train: {adv_train}, "
-                  f"boo_adv_train: {boo_adv_train}")
+            print(f"\nEpoch {epoch}, adv_train: {adv_train}, boo_adv_train: {boo_adv_train}")
 
+            # Iterate through training data
             start = time.time()
-            for x, y in train_loader:
+            for i, (x, y) in enumerate(train_loader):
+                # x is the input; y is the label
                 x, y = x.to(device), y.to(device)
 
                 # Perturb data if we are doing adversarial training

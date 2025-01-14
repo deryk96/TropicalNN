@@ -21,7 +21,7 @@ from custom_layers.tropical_layers import TropEmbed, ChangeSignLayer
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.models as models
+import torchvision.models as models
 
 class Maxout(nn.Module):
     def __init__(self, num_units, axis=-1, **kwargs):
@@ -69,6 +69,7 @@ class CustomModelClass(nn.Module):
         super(CustomModelClass, self).__init__(**kwargs)
         self.num_classes = num_classes
         # self.initializer = initializer
+        self.initializer = initializer if initializer else lambda w: nn.init.normal_(w, mean=0., std=2.0)
         self.dropout_rate = dropout_rate
         self.num_maxout_neurons = num_maxout_neurons
         self.lam = lam
@@ -77,10 +78,11 @@ class CustomModelClass(nn.Module):
         self._select_top_layer(top)  # Initialize layers based on top type
 
         # Set initializer
-        if initializer is None:
-            self.initializer = lambda w: nn.init.normal_(w, mean=0., std=2.0)
-        else:
-            self.initializer = initializer
+        # if initializer is None:
+        #     self.initializer = lambda w: nn.init.normal_(w, mean=0., std=2.0)
+        # else:
+        #     self.initializer = initializer
+
 
     def _select_top_layer(self, top):
         if top == "relu":
@@ -119,7 +121,6 @@ class CustomModelClass(nn.Module):
         #     TropEmbed(self.num_classes, initializer_w=self.initializer, lam=self.lam, distance_metric = "sym", name="tropical"),
         #     ChangeSignLayer(),
         # ])
-
         self.top_layer = nn.Sequential(
             nn.Linear(64, 64),
             nn.ReLU(),
@@ -185,7 +186,7 @@ class CustomModelClass(nn.Module):
         self.maxout_1 = Maxout(num_units=self.num_classes)
         self.maxout_2 = Maxout(num_units=self.num_classes)
 
-    def simple_top(self, x):
+    def simple_top(self, x, training):
         return self.top_layer(x)
 
     def maxout_top(self, x, training):
@@ -405,10 +406,11 @@ class ModifiedLeNet5(CustomModelClass):
                  **kwargs):
         super(ModifiedLeNet5, self).__init__(num_classes = num_classes, 
                                     top = top, 
-                                    initializer=initializer, 
+                                    initializer=initializer,
                                     num_maxout_neurons = num_maxout_neurons, 
                                     dropout_rate = dropout_rate,
                                     **kwargs)
+        # self.initializer = initializer if initializer else lambda w: nn.init.normal_(w, mean=0., std=2.0)
         self._build_base()
 
     def _build_base(self):
@@ -422,20 +424,24 @@ class ModifiedLeNet5(CustomModelClass):
         #     Dense(64, activation='relu'),
         # ])
 
-        self.base_layers = nn.Sequential([
-            nn.Conv2D(3, 64),
-            nn.ReLU(),
-            nn.MaxPool2D(kernel_size=2),
-            Conv2D(64, (3, 3), activation='relu'),
-            nn.Conv2d(3, 64),
+        # Not working with grayscale pictures, changed input channels in attempt to fix
+        self.base_layers = nn.Sequential(
+            # nn.Conv2d(3, 64, kernel_size=3),
+            nn.Conv2d(1, 64, kernel_size=3),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2),
-            nn.Conv2d(3, 64),
+            # nn.Conv2d(3, 64, kernel_size=3),
+            nn.Conv2d(64, 64, kernel_size=3),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2),
+            nn.Conv2d(64, 64, kernel_size=3),
+            # nn.Conv2d(3, 64, kernel_size=3),
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(64, 64),
+            # nn.Linear(64, 64),
+            nn.Linear(64*3*3, 64),
             nn.ReLU()
-        ])
+        )
 
     # def call(self, inputs, training=True):
     def forward(self, inputs, training=True):
@@ -537,7 +543,7 @@ class MobileNetModel(CustomModelClass):
         # ])
 
         # Load MobileNet model
-        mobilenet = models.mobilenet_v2(weights=None)  # TODO: Is mobilenet v2 ok with below mods?
+        mobilenet = models.mobilenet_v2(weights=None)
 
         # Remove classifier
         mobilenet.classifier = nn.Identity()
@@ -668,7 +674,7 @@ class ResNet50Model(CustomModelClass):
         return cls(**config)
 
 
-class MMRModel(Model):
+class MMRModel(nn.Module):
     def __init__(self,
                  num_classes,
                  # initializer=initializers.RandomNormal(mean=0.5, stddev=1., seed=0),
