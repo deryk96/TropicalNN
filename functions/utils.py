@@ -17,7 +17,7 @@ from torch.utils.data import DataLoader, Subset
 
 # Custom functions
 from functions.models import (ResNet50Model, ModifiedLeNet5, LeNet5, VGG16Model,
-                              MobileNetModel, EfficientNetB4Model, AlexNetModel, MMRModel)
+                              MobileNetModel, EfficientNetB4Model, AlexNetModel, MMRModel, CifarCnnModel)
 
 ############################
 # Data Loading and Filtering
@@ -47,19 +47,6 @@ def ld_mnist(batch_size=128, classes=None):
     """
     Load MNIST using torchvision, filter classes if specified, and return DataSets.
     """
-    # dataset, info = tfds.load("mnist", with_info=True, as_supervised=True)
-    #
-    # mnist_train, mnist_test = dataset["train"], dataset["test"]
-    #
-    # # Apply class filtering if classes are specified
-    # if classes is not None:
-    #     mnist_train = filter_classes(mnist_train, classes)
-    #     mnist_test = filter_classes(mnist_test, classes)
-    #
-    # mnist_train = mnist_train.map(convert_types).shuffle(10000).batch(batch_size)
-    # mnist_test = mnist_test.map(convert_types).batch(batch_size)
-    #
-    # return EasyDict(train=mnist_train, test=mnist_test), info
 
     transform = transforms.Compose([
         transforms.ToTensor(),
@@ -81,13 +68,6 @@ def ld_svhn(batch_size = 128):
     """
     Load SVHN training and test data.
     """
-    # dataset, info = tfds.load("svhn_cropped", with_info=True, as_supervised=True)
-    #
-    # svhn_train, svhn_test = dataset["train"], dataset["test"]
-    # svhn_train = svhn_train.map(convert_types).shuffle(10000).batch(batch_size)
-    # svhn_test = svhn_test.map(convert_types).batch(batch_size)
-    #
-    # return EasyDict(train=svhn_train, test=svhn_test), info
 
     transform = transforms.Compose([
         transforms.ToTensor(),
@@ -105,14 +85,6 @@ def ld_cifar10(batch_size = 128):
     """
     Load CIFAR-10 training and test data.
     """
-    # """Load CIFAR-10 training and test data."""
-    # dataset, info = tfds.load("cifar10", with_info=True, as_supervised=True)
-    #
-    # cifar10_train, cifar10_test = dataset["train"], dataset["test"]
-    # cifar10_train = cifar10_train.map(convert_types).shuffle(10000).batch(batch_size)
-    # cifar10_test = cifar10_test.map(convert_types).batch(batch_size)
-    #
-    # return EasyDict(train=cifar10_train, test=cifar10_test), info
 
     transform = transforms.Compose([
         transforms.ToTensor(),
@@ -130,13 +102,6 @@ def ld_cifar100(batch_size = 128):
     """
     Load CIFAR-100 training and test data.
     """
-    # dataset, info = tfds.load("cifar100", with_info=True, as_supervised=True)
-    #
-    # cifar100_train, cifar100_test = dataset["train"], dataset["test"]
-    # cifar100_train = cifar100_train.map(convert_types).shuffle(10000).batch(batch_size)
-    # cifar100_test = cifar100_test.map(convert_types).batch(batch_size)
-    #
-    # return EasyDict(train=cifar100_train, test=cifar100_test), info
 
     transform = transforms.Compose([
         transforms.ToTensor(),
@@ -159,9 +124,6 @@ def l2(x, y):
     Compute L2 distance across spatial dims.
     x,y: torch Tensors of shape [B, ...]
     """
-    # return tf.sqrt(tf.reduce_sum(tf.square(x - y), list(range(1, len(x.shape)))))
-
-    # x,y: torch Tensors of shape [B, ...]
     # Compute L2 distance across spatial dims
     return torch.sqrt(torch.sum((x - y)**2, dim=tuple(range(1, x.ndim))))
 
@@ -170,7 +132,6 @@ def l1(x, y):
     Compute L2 distance across spatial dims.
     x,y: torch Tensors of shape [B, ...]
     """
-    # return tf.reduce_sum(tf.abs(x - y), list(range(1, len(x.shape))))
 
     return torch.sum(torch.abs(x - y), dim=tuple(range(1, x.ndim)))
 
@@ -217,6 +178,7 @@ def load_data(dataset_name, batch_size, classes = None):
         data, info = ld_mnist(batch_size=batch_size, classes=classes)
         num_classes = 10
         input_shape = (28,28,1)
+        num_channels = 1
     elif dataset_name == "svhn":
         dataset_category = 0
         eps = 8/255
@@ -224,6 +186,7 @@ def load_data(dataset_name, batch_size, classes = None):
         data, info = ld_svhn(batch_size=batch_size)
         num_classes = 10
         input_shape = (32,32,3)
+        num_channels = 3
     elif dataset_name == "cifar10":
         dataset_category = 1
         eps = 8/255
@@ -231,6 +194,7 @@ def load_data(dataset_name, batch_size, classes = None):
         data, info = ld_cifar10(batch_size=batch_size)
         num_classes = 10
         input_shape = (32,32,3)
+        num_channels = 3
     elif dataset_name == "cifar100":
         dataset_category = 1
         eps = 8/255
@@ -238,27 +202,17 @@ def load_data(dataset_name, batch_size, classes = None):
         data, info = ld_cifar100(batch_size=batch_size)
         num_classes = 100
         input_shape = (32,32,3)
+        num_channels = 3
     else:
         raise ValueError("Invalid dataset name provided. "
                          "Should be either 'mnist', 'svhn', 'cifar10', 'cifar100', or 'imagenet'")
-    return dataset_category, eps, input_elements, data, info, input_shape, num_classes
+    return dataset_category, eps, input_elements, data, info, input_shape, num_classes, num_channels
 
 ########################
 # Model Loading and Utility
 ########################
 
 def find_model(dataset_name, base_model, top_layer, root_dir = "new_master_models"):
-    # valid_datasets = ["mnist", "svhn", "cifar10", "cifar100"]
-    # valid_base_models = ["LeNet5", "ModifiedLeNet5", "MobileNet", "ResNet50", "VGG16", "EfficientNetB4"]
-    # valid_top_layers = ["maxout", "relu", "trop"]
-    # for dir_path, _dirnames_, filenames in os.walk(root_dir):
-    #     for filename in filenames:
-    #         # if not ".keras" in filename:
-    #
-    #             continue
-    #         list_dirname = filename.split('_')
-    #         if (list_dirname[0] == dataset_name) and (list_dirname[1] == base_model) and (list_dirname[2] == top_layer) and (list_dirname[3] == "no"):
-    #             return os.path.join(dir_path, filename)
 
     for dir_path, _, filenames in os.walk(root_dir):
         for filename in filenames:
@@ -269,39 +223,50 @@ def find_model(dataset_name, base_model, top_layer, root_dir = "new_master_model
                     (list_dirname[2] == top_layer) and (list_dirname[3] == "no")):
                 return os.path.join(dir_path, filename)
 
+    # Model not found at this point
+    print(f'Model not found in find_model function.')
+
 
 def model_choice(dataset_name, base_model, top, adv_train):
+    # Set number of classes present in dataset
     if dataset_name == "cifar100":
         num_classes = 100
     else:
         num_classes = 10
 
+    # Set number of input channels. MNIST is only grayscale dataset
+    if dataset_name == "mnist":
+        num_channels = 1
+    else:
+        num_channels = 3
+
     if base_model == "LeNet5":
-        model = LeNet5(num_classes=num_classes, top=top)
+        model = LeNet5(num_classes=num_classes, top=top, num_channels=num_channels)
     elif base_model == "ModifiedLeNet5":
-        model =  ModifiedLeNet5(num_classes=num_classes, top=top)
+        model =  ModifiedLeNet5(num_classes=num_classes, top=top, num_channels=num_channels)
     elif base_model == "MobileNet":
-        model =  MobileNetModel(num_classes=num_classes, top=top)
+        model =  MobileNetModel(num_classes=num_classes, top=top, num_channels=num_channels)
     elif base_model == "ResNet50":
-        model =  ResNet50Model(num_classes=num_classes, top=top)
+        model =  ResNet50Model(num_classes=num_classes, top=top, num_channels=num_channels)
     elif base_model == "VGG16":
-        model =  VGG16Model(num_classes=num_classes, top=top)
+        model =  VGG16Model(num_classes=num_classes, top=top, num_channels=num_channels)
     elif base_model == "EfficientNetB4":
-        model =  EfficientNetB4Model(num_classes=num_classes, top=top)
+        model =  EfficientNetB4Model(num_classes=num_classes, top=top, num_channels=num_channels)
     elif base_model == "AlexNet":
-        model =  AlexNetModel(num_classes=num_classes, top=top)
+        model =  AlexNetModel(num_classes=num_classes, top=top, num_channels=num_channels)
     elif base_model == "MMR":
-        model = MMRModel(num_classes=num_classes)
+        model = MMRModel(num_classes=num_classes, num_channels=num_channels)
+    elif base_model == "CifarCnnModel":
+        model = CifarCnnModel(num_classes=num_classes, top=top, num_channels=num_channels)
     else:
         raise ValueError("Base model not recognized.")
 
-    # TODO: Need the PyTorch equivalent for model loading
     if adv_train == "yes":
         starting_model_path = find_model(dataset_name, base_model, top)
         # starting_model = tf.keras.models.load_model(starting_model_path)
-        starting_model = torch.jit.load(starting_model_path).eval()  # eval() sets dropout/batch normalization layers to eval mode
+        model.load_state_dict(torch.load(starting_model_path))
         # new_model = tf.keras.models.clone_model(starting_model)
-        new_model = copy.deepcopy(starting_model)  # Deep copy to not disturb original
+        new_model = copy.deepcopy(model)  # Deep copy to not disturb original
 
         # Pytorch copies weights and biases from original
         # starting_model_weights = starting_model.get_weights()
@@ -367,7 +332,7 @@ def find_directories_with_keyphrase(root_dir, dataset_name):
                                                         "relu" :    {"yes" : 0, "no" : 0},
                                                         "trop" :    {"yes" : 0, "no" : 0}}},
                     }
-    #{dataset_name}_{base_model}_{top_layer}_{adv_train}
+    # {dataset_name}_{base_model}_{top_layer}_{adv_train}
     result = {}
     for dir_path, dirnames, filenames in os.walk(root_dir):
         for dirname in dirnames:
@@ -390,9 +355,9 @@ def find_directories_with_keyphrase(root_dir, dataset_name):
 
 
 def load_attack_settings(dataset_name, batch_size, root_dir):
-    _, eps, _, data, info, _, _ = load_data(dataset_name, batch_size)
+    _, eps, _, data, info, _, _, num_channels = load_data(dataset_name, batch_size)
     model_paths = find_directories_with_keyphrase(root_dir, dataset_name)
-    return eps, data, info, model_paths
+    return eps, data, info, model_paths, num_channels
 
 
 def save_location_attack_results(arg_dataset, name, batch_chunk, total_batch_chunks,attack_type):

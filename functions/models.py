@@ -56,6 +56,7 @@ class Maxout(nn.Module):
         inputs = inputs.view(*new_shape)
         return torch.max(inputs, dim=-2)[0]
 
+
 class CustomModelClass(nn.Module):
     def __init__(self, 
                  num_classes, 
@@ -65,6 +66,7 @@ class CustomModelClass(nn.Module):
                  num_maxout_neurons=64,
                  dropout_rate=0.5,
                  lam=0,
+                 num_channels=3,
                  **kwargs):
         super(CustomModelClass, self).__init__(**kwargs)
         self.num_classes = num_classes
@@ -74,6 +76,7 @@ class CustomModelClass(nn.Module):
         self.num_maxout_neurons = num_maxout_neurons
         self.lam = lam
         self.top = top
+        self.num_channels = num_channels
         self.top_layer = None  # Added to explicitly initialize variable
         self._select_top_layer(top)  # Initialize layers based on top type
 
@@ -82,7 +85,6 @@ class CustomModelClass(nn.Module):
         #     self.initializer = lambda w: nn.init.normal_(w, mean=0., std=2.0)
         # else:
         #     self.initializer = initializer
-
 
     def _select_top_layer(self, top):
         if top == "relu":
@@ -104,25 +106,17 @@ class CustomModelClass(nn.Module):
             raise ValueError("Invalid top layer specified.")
 
     def _build_relu(self):
-        # self.top_layer = Sequential([
-        #     Dense(256, activation="relu", name="last_fc"),
-        #     Dense(self.num_classes)
-        # ])
-
         self.top_layer = nn.Sequential(
-            nn.Linear(256, 256),
+            # nn.Linear(256, 256),  # For MNIST
+            nn.Linear(1024, 256),  # For CIFAR
             nn.ReLU(),
             nn.Linear(256, self.num_classes)
         )
 
     def _build_trop(self):
-        # self.top_layer = Sequential([
-        #     Dense(64, activation="relu", name="last_fc"),
-        #     TropEmbed(self.num_classes, initializer_w=self.initializer, lam=self.lam, distance_metric = "sym", name="tropical"),
-        #     ChangeSignLayer(),
-        # ])
         self.top_layer = nn.Sequential(
-            nn.Linear(64, 64),
+            # nn.Linear(256, 256),  # For MNIST
+            nn.Linear(1024, 256),  # For CIFAR
             nn.ReLU(),
             TropEmbed(self.num_classes, initializer_w=self.initializer, lam=self.lam,
                       distance_metric="sym", name="tropical"),
@@ -171,7 +165,7 @@ class CustomModelClass(nn.Module):
 
         self.top_layer = None
         self.dense_0 = nn.Linear(256, 256)  # ReLU implemented below in maxout_top function
-
+        self.relu_0 = nn.ReLU()
         self.dense_1 = nn.Linear(self.num_maxout_neurons * self.num_classes,
                                  self.num_maxout_neurons * self.num_classes)
         self.dense_2 = nn.Linear(self.num_maxout_neurons * self.num_classes,
@@ -216,6 +210,22 @@ class CustomModelClass(nn.Module):
         else:
             return self.maxout_top(x)
 
+    # TODO: Debug or delete
+    def validation_step(self, batch, loss_func):
+        images, labels = batch
+        out = self(images)                    # Generate predictions
+        loss = loss_func(out, labels)   # Calculate loss
+        acc = accuracy(out, labels)           # Calculate accuracy
+        return {'val_loss': loss.detach(), 'val_acc': acc}
+
+    # TODO: Debug or delete
+    def validation_epoch_end(self, outputs):
+        batch_losses = [x['val_loss'] for x in outputs]
+        epoch_loss = torch.stack(batch_losses).mean()   # Combine losses
+        batch_accs = [x['val_acc'] for x in outputs]
+        epoch_acc = torch.stack(batch_accs).mean()      # Combine accuracies
+        return {'val_loss': epoch_loss.item(), 'val_acc': epoch_acc.item()}
+
     def get_config(self):
         config = super().get_config()
         config.update({
@@ -232,6 +242,7 @@ class CustomModelClass(nn.Module):
     @classmethod
     def from_config(cls, config, custom_objects=None):
         return cls(**config)
+
 
 class AlexNetModel(CustomModelClass):
     def __init__(self, 
@@ -300,7 +311,6 @@ class AlexNetModel(CustomModelClass):
                 if layer.bias is not None:
                     nn.init.zeros_(layer.bias)  # Initialize bias to zero
 
-    # def call(self, inputs, training=True):
     def forward(self, inputs, training=True):
         x = self.base_layers(inputs)
         return self.top_processor(x, training)
@@ -315,7 +325,6 @@ class AlexNetModel(CustomModelClass):
     @classmethod
     def from_config(cls, config, custom_objects=None):
         return cls(**config)
-
 
 
 class VGG16Model(CustomModelClass):
@@ -379,7 +388,6 @@ class VGG16Model(CustomModelClass):
                 if layer.bias is not None:
                     nn.init.zeros_(layer.bias)
 
-    # def call(self, inputs, training=True):
     def forward(self, inputs, training=True):
         x = self.base_layers(inputs)
         return self.top_processor(x, training)
@@ -395,6 +403,7 @@ class VGG16Model(CustomModelClass):
     def from_config(cls, config, custom_objects=None):
         return cls(**config)
 
+
 class ModifiedLeNet5(CustomModelClass):
     def __init__(self, 
                  num_classes, 
@@ -403,50 +412,56 @@ class ModifiedLeNet5(CustomModelClass):
                  initializer=None,
                  num_maxout_neurons = 100, 
                  dropout_rate = 0.5,
+                 num_channels = 3,
                  **kwargs):
         super(ModifiedLeNet5, self).__init__(num_classes = num_classes, 
                                     top = top, 
                                     initializer=initializer,
                                     num_maxout_neurons = num_maxout_neurons, 
                                     dropout_rate = dropout_rate,
+                                    num_channels=num_channels,
                                     **kwargs)
-        # self.initializer = initializer if initializer else lambda w: nn.init.normal_(w, mean=0., std=2.0)
-        self._build_base()
+        # self._build_base()
 
-    def _build_base(self):
-        # self.base_layers = Sequential([
-        #     Conv2D(64, (3,3), activation='relu'),
-        #     MaxPooling2D((2, 2)),
-        #     Conv2D(64, (3, 3), activation='relu'),
-        #     MaxPooling2D((2, 2)),
-        #     Conv2D(64, (3, 3), activation='relu'),
-        #     Flatten(),
-        #     Dense(64, activation='relu'),
-        # ])
+        self.conv1 = nn.Conv2d(in_channels=num_channels, out_channels=64, kernel_size=(3, 3))
+        self.relu1 = nn.ReLU()
+        self.maxpool1 = nn.MaxPool2d(kernel_size=(2, 2))
+        self.conv2 = nn.Conv2d(in_channels=64, out_channels=64, kernel_size=(3, 3))
+        self.relu2 = nn.ReLU()
+        self.maxpool2 = nn.MaxPool2d(kernel_size=(2, 2))
+        self.conv3 = nn.Conv2d(in_channels=64, out_channels=64, kernel_size=(3, 3))
+        self.relu3 = nn.ReLU()
+        self.flatten = nn.Flatten()
+        self.linear4 = nn.Linear(in_features=576, out_features=256)
+        self.relu4 = nn.ReLU()
 
-        # Not working with grayscale pictures, changed input channels in attempt to fix
-        self.base_layers = nn.Sequential(
-            # nn.Conv2d(3, 64, kernel_size=3),
-            nn.Conv2d(1, 64, kernel_size=3),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2),
-            # nn.Conv2d(3, 64, kernel_size=3),
-            nn.Conv2d(64, 64, kernel_size=3),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2),
-            nn.Conv2d(64, 64, kernel_size=3),
-            # nn.Conv2d(3, 64, kernel_size=3),
-            nn.ReLU(),
-            nn.Flatten(),
-            # nn.Linear(64, 64),
-            nn.Linear(64*3*3, 64),
-            nn.ReLU()
-        )
 
-    # def call(self, inputs, training=True):
     def forward(self, inputs, training=True):
-        x = self.base_layers(inputs)
-        return self.top_processor(x, training)
+
+        x = self.relu1(self.conv1(inputs))
+        x = self.maxpool1(x)
+        x = self.relu2(self.conv2(x))
+        x = self.maxpool2(x)
+        x = self.relu3(self.conv3(x))
+        x = self.flatten(x)
+        x = self.relu4(self.linear4(x))
+
+        return self.top_processor(x, training=training)
+
+    def validation_step(self, batch, loss_func):
+        images, labels = batch
+        out = self(images)                    # Generate predictions
+        loss = loss_func(out, labels)   # Calculate loss
+        acc = accuracy(out, labels)           # Calculate accuracy
+        return {'val_loss': loss.detach(), 'val_acc': acc}
+
+    def validation_epoch_end(self, outputs):
+        batch_losses = [x['val_loss'] for x in outputs]
+        epoch_loss = torch.stack(batch_losses).mean()   # Combine losses
+        batch_accs = [x['val_acc'] for x in outputs]
+        epoch_acc = torch.stack(batch_accs).mean()      # Combine accuracies
+        return {'val_loss': epoch_loss.item(), 'val_acc': epoch_acc.item()}
+
     
     def get_config(self):
         config = super().get_config()
@@ -465,48 +480,56 @@ class LeNet5(CustomModelClass):
                  initializer=None,
                  num_maxout_neurons = 100, 
                  dropout_rate = 0.5,
+                 num_channels = 3,
                  **kwargs):
         super(LeNet5, self).__init__(num_classes=num_classes,
                                     top=top,
                                     initializer=initializer, 
                                     num_maxout_neurons=num_maxout_neurons,
                                     dropout_rate=dropout_rate,
+                                    num_channels=num_channels,
                                     **kwargs)
-        self._build_base()
 
-    def _build_base(self):
-        # self.base_layers = Sequential([
-        #     Conv2D(filters=6, kernel_size=(5, 5), strides=(1, 1), activation='tanh', padding='same'),
-        #     AveragePooling2D(pool_size=(2, 2), strides=(2, 2), padding='valid'),
-        #     Conv2D(filters=16, kernel_size=(5, 5), strides=(1, 1), activation='tanh', padding='valid'),
-        #     AveragePooling2D(pool_size=(2, 2), strides=(2, 2), padding='valid'),
-        #     Conv2D(filters=120, kernel_size=(5, 5), strides=(1, 1), activation='tanh', padding='valid'),
-        #     Flatten(),
-        #     Dense(units=84, activation='tanh'),
-        #
-        # ])
+        # First set
+        self.conv1 = nn.Conv2d(in_channels=num_channels, out_channels=6, kernel_size=(5, 5),
+                               stride=(1, 1), padding='same')
+        self.tanh1 = nn.Tanh()
+        self.avgpool1 = nn.AvgPool2d(kernel_size=(2, 2), stride=(2, 2))
 
-        self.base_layers = nn.Sequential(
-            nn.Conv2d(3, 6, kernel_size=5, stride=1, padding='same'),
-            nn.Tanh(),
-            nn.AvgPool2d(kernel_size=2, stride=2),
+        # Second set
+        self.conv2 = nn.Conv2d(in_channels=6, out_channels=16, kernel_size=(5, 5),
+                               stride=(1, 1), padding='valid')
+        self.tanh2 = nn.Tanh()
+        self.avgpool2 = nn.AvgPool2d(kernel_size=(2, 2), stride=(2, 2))
 
-            nn.Conv2d(6, 15, kernel_size=5, stride=1, padding='valid'),
-            nn.Tanh(),
-            nn.AvgPool2d(kernel_size=2, stride=2),
+        # Third set
+        self.conv3 = nn.Conv2d(in_channels=16, out_channels=120, kernel_size=(5, 5), stride=(1, 1), padding='valid')
+        self.tanh3 = nn.Tanh()
+        self.flatten3 = nn.Flatten()
 
-            nn.Conv2d(in_channels=16, out_channels=120, kernel_size=5, stride=1, padding='valid'),
-            nn.Tanh(),
-            nn.Flatten(),
+        # Fourth set
+        self.linear4 = nn.Linear(in_features=120, out_features=256)
+        self.tanh4 = nn.Tanh()
 
-            nn.Linear(in_features=480, out_features=84),
-            nn.Tanh()
-        )
 
-    # def call(self, inputs, training=True):
     def forward(self, inputs, training=True):
-        x = self.base_layers(inputs)
-        return self.top_processor(x, training)
+        # x = self.base_layers(inputs)
+        # return self.top_processor(x, training)
+
+        x = self.conv1(inputs)
+        x = self.tanh1(x)
+        x = self.avgpool1(x)
+        x = self.conv2(x)
+        x = self.tanh2(x)
+        x = self.avgpool2(x)
+        x = self.conv3(x)
+        x = self.tanh3(x)
+        x = self.flatten3(x)
+        x = self.linear4(x)
+        x = self.tanh4(x)
+
+        return self.top_processor(x, training=training)
+
     
     def get_config(self):
         config = super().get_config()
@@ -554,7 +577,6 @@ class MobileNetModel(CustomModelClass):
         )
 
 
-    # def call(self, inputs, training=True):
     def forward(self, inputs, training=True):
         x = self.base_layers(inputs)
         return self.top_processor(x, training)
@@ -607,7 +629,6 @@ class EfficientNetB4Model(CustomModelClass):
             nn.AdaptiveAvgPool2d((1,1))
         )
 
-    # def call(self, inputs, training=True):
     def forward(self, inputs, training=True):
         x = self.base_layers(inputs)
         return self.top_processor(x, training)
@@ -718,7 +739,6 @@ class MMRModel(nn.Module):
             nn.init.normal_(self.final_layer.weight, mean=0.5, std=1.)
 
 
-    # def call(self, inputs, training=True, return_feature_maps=False):
     def forward(self, inputs, training=True, return_feature_maps=False):
         feature_maps = []
 
@@ -766,6 +786,74 @@ class MMRModel(nn.Module):
             # 'initializer': initializers.serialize(self.initializer),
             'initializer': str(self.initializer),
         })
+        return config
+
+    @classmethod
+    def from_config(cls, config, custom_objects=None):
+        return cls(**config)
+
+
+class CifarCnnModel(CustomModelClass):
+    def __init__(self,
+                 num_classes,
+                 top,
+                 # initializer=initializers.RandomNormal(mean=0, stddev=1., seed=0),
+                 initializer=None,
+                 num_maxout_neurons = 100,
+                 dropout_rate = 0.5,
+                 num_channels = 3,
+                 **kwargs):
+        super(CifarCnnModel, self).__init__(num_classes = num_classes,
+                                             top = top,
+                                             initializer=initializer,
+                                             num_maxout_neurons = num_maxout_neurons,
+                                             dropout_rate = dropout_rate,
+                                             num_channels=num_channels,
+                                             **kwargs)
+        self.layers = nn.Sequential(
+            nn.Conv2d(in_channels=num_channels, out_channels=32, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, kernel_size=3, padding=1, stride=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2, 2),
+
+            nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(128, 128, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2, 2),
+
+            nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2, 2),
+
+            nn.Flatten(),
+            nn.Linear(256*4*4, 1024),
+            nn.ReLU()
+        )
+
+    def forward(self, inputs, training=True):
+        x = self.layers(inputs)
+        return self.top_processor(x, training=training)
+
+    def validation_step(self, batch, loss_func):
+        images, labels = batch
+        out = self(images)                    # Generate predictions
+        loss = loss_func(out, labels)         # Calculate loss
+        acc = accuracy(out, labels)           # Calculate accuracy
+        return {'val_loss': loss.detach(), 'val_acc': acc}
+
+    def validation_epoch_end(self, outputs):
+        batch_losses = [x['val_loss'] for x in outputs]
+        epoch_loss = torch.stack(batch_losses).mean()   # Combine losses
+        batch_accs = [x['val_acc'] for x in outputs]
+        epoch_acc = torch.stack(batch_accs).mean()      # Combine accuracies
+        return {'val_loss': epoch_loss.item(), 'val_acc': epoch_acc.item()}
+
+    def get_config(self):
+        config = super().get_config()
         return config
 
     @classmethod
